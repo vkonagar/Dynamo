@@ -22,7 +22,7 @@
 #define DEFAULT_LISTEN_PORT 80
 #define MAX_LISTEN_QUEUE 100
 #define MAX_NAME_LENGTH 100
-#define IO_BLOCK_SIZE 10
+#define MAX_READ_LENGTH 4096
 
 int get_resource_type(char* url, char* resource_name)
 {
@@ -51,8 +51,6 @@ int get_resource_type(char* url, char* resource_name)
 
 void handle_dynamic(int fd, char* resource_name)
 {
-    printf("Resource is %s\n", resource_name);
-    http_write_response_header(fd, HTTP_200);
     int pipe_fds[2];
     if (pipe(pipe_fds) == -1)
     {
@@ -68,6 +66,7 @@ void handle_dynamic(int fd, char* resource_name)
         char *newargv[] = { resource_name, NULL };
         if (execve(resource_name, newargv, NULL) == -1)
         {
+            http_write_response_header(fd, HTTP_404);
             perror("exec");
             exit(EXIT_FAILURE);
         }
@@ -82,9 +81,10 @@ void handle_dynamic(int fd, char* resource_name)
 
     if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_FAILURE)
     {
-        char buf[4096];
+        http_write_response_header(fd, HTTP_200);
+        char buf[MAX_READ_LENGTH];
         int read_cnt;
-        while((read_cnt = read(pipe_fds[0], buf, 4096)) > 0)
+        while((read_cnt = read(pipe_fds[0], buf, MAX_READ_LENGTH)) > 0)
         {
             write(fd, buf, read_cnt);
         }
@@ -103,7 +103,7 @@ void handle_static(int fd, char* resource_name)
     }
     http_write_response_header(fd, HTTP_200);
     int read_count;
-    while ((read_count = sendfile(fd, filefd, 0, IO_BLOCK_SIZE)) > 0);
+    while ((read_count = sendfile(fd, filefd, 0, MAX_READ_LENGTH)) > 0);
     if (read_count == -1)
     {
         perror("sendfile");
