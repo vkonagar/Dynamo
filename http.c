@@ -2,7 +2,21 @@
 #include "csapp.h"
 #include <stdbool.h>
 
-int scan_header(int clientfd, http_header_t* header)
+int http_write_response_header(int clientfd, int http_response_code)
+{
+    char* response_str;
+    switch (http_response_code)
+    {
+        case HTTP_200: response_str = "HTTP/1.0 200 OK\r\n";
+                       break;
+        case HTTP_404: response_str = "HTTP/1.0 404 Not Found\r\n";
+                       break;
+    }
+    write(clientfd, response_str, strlen(response_str));
+    write(clientfd, "\r\n", 2);
+}
+
+int http_scan_header(int clientfd, http_header_t* header)
 {
     rio_t rio; /* For robust IO */
     bool request_format_scanned = false; /* Indicates if the first line of
