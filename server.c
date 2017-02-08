@@ -18,11 +18,13 @@
 #include "http_header.h"
 #include "http.h"
 #include "csapp.h"
+#include <sys/resource.h>
 
 #define DEFAULT_LISTEN_PORT 80
 #define MAX_LISTEN_QUEUE 100
 #define MAX_NAME_LENGTH 100
 #define MAX_READ_LENGTH 4096
+#define MAX_FD_LIMIT 100000
 
 int get_resource_type(char* url, char* resource_name)
 {
@@ -89,6 +91,7 @@ void handle_dynamic(int fd, char* resource_name)
             write(fd, buf, read_cnt);
         }
     }
+    close(pipe_fds[0]);
 }
 
 void handle_static(int fd, char* resource_name)
@@ -107,8 +110,10 @@ void handle_static(int fd, char* resource_name)
     if (read_count == -1)
     {
         perror("sendfile");
+	close(filefd);
         return;
     }
+    close(filefd);
 }
 
 void handle_unknown(int fd, char* resource_name)
@@ -132,10 +137,6 @@ void* client_handler(void* arg)
     init_header(&header);
     http_scan_header(fd, &header);
 
-    printf("HTTP request is %s %s %s\n",header.request_type,
-                                        header.request_url,
-                                        header.request_http_version);
-
     char resource_name[MAX_NAME_LENGTH];
     switch (get_resource_type(header.request_url, resource_name))
     {
@@ -151,12 +152,23 @@ void* client_handler(void* arg)
                                     handle_unknown(fd, resource_name);
                                     break;
     }
+    free_kvpairs_in_header(&header);
     close(fd);
 }
 
 int main(int argc, char *argv[])
 {
     signal(SIGPIPE, SIG_IGN);
+    /* Set resource limits */
+    struct rlimit res;
+    res.rlim_cur = MAX_FD_LIMIT;
+    res.rlim_max = MAX_FD_LIMIT;
+    if( setrlimit(RLIMIT_NOFILE, &res) == -1 )
+    {
+	perror("Resource FD limit");
+	exit(0);
+    }
+
     int port = DEFAULT_LISTEN_PORT;
     if (argc == 2)
     {
@@ -190,12 +202,14 @@ int main(int argc, char *argv[])
     memset(&client_addr, 0, sizeof(client_addr));
     int size = 0;
     pthread_t thread_id;
+    int count = 0;
     while (1)
     {
         int* client_fd = malloc(sizeof(int));
         *client_fd = Accept(server_sock, (struct sockaddr*) &client_addr, &size);
         pthread_create(&thread_id, NULL, client_handler, (void*) client_fd);
-        printf("Connection from a client\n");
+        printf("Connection from a client %d\n", count);
+	count++;
     }
     close(server_sock);
 }
