@@ -26,6 +26,15 @@
 #define MAX_READ_LENGTH 4096
 #define MAX_FD_LIMIT 100000
 
+
+#ifdef DEBUG
+#define dbg_printf(...) printf(__VA_ARGS__)
+#else
+#define dbg_printf(...)
+#endif
+
+
+
 void handle_dynamic(int fd, char* resource_name)
 {
     int pipe_fds[2];
@@ -93,7 +102,7 @@ void handle_static(int fd, char* resource_name)
 
 void handle_unknown(int fd, char* resource_name)
 {
-    printf("Unknown resource type\n");
+    dbg_printf("Unknown resource type\n");
 }
 
 void* client_handler(void* arg)
@@ -151,7 +160,7 @@ int main(int argc, char *argv[])
         port = strtol(argv[1], NULL, 10);
         if (((port == LONG_MIN || port == LONG_MAX) && errno == ERANGE) || port == 0)
         {
-            printf("Provide a valid port number\n");
+            dbg_printf("Provide a valid port number\n");
         }
     }
     else
@@ -183,7 +192,7 @@ int main(int argc, char *argv[])
         int* client_fd = malloc(sizeof(int));
         *client_fd = Accept(server_sock, (struct sockaddr*) &client_addr, &size);
         pthread_create(&thread_id, NULL, client_handler, (void*) client_fd);
-        printf("Connection from a client %d\n", count);
+        dbg_printf("Connection from a client %d\n", count);
 	count++;
     }
     close(server_sock);

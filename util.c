@@ -95,6 +95,6 @@ request_item* create_request_item(int type, char* url)
 {
     request_item* item = malloc(sizeof(request_item));
     item->request_type = type;
-    strcpy(item->resource_url, url);
+    sprintf(item->resource_url, "%s", url);
     return item;
 }

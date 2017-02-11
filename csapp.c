@@ -743,7 +743,7 @@ ssize_t rio_readn(int fd, void *usrbuf, size_t n)
 	    if (errno == EINTR) /* Interrupted by sig handler return */
 		nread = 0;      /* and call read() again */
 	    else
-		return -1;      /* errno set by read() */
+            return -1;      /* errno set by read() */
 	}
 	else if (nread == 0)
 	    break;              /* EOF */

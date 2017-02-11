@@ -2,7 +2,7 @@
 #define HTTP_HEADER_PROXY_H
 
 /* These two macros should be consistent */
-#define MAX_URL_LENGTH 5000
+#define MAX_URL_LENGTH 100
 
 /* Port number string max length */
 #define PORT_NUMBER_STR_MAX_LENGTH 10

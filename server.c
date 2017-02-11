@@ -4,25 +4,40 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <stdlib.h>
+#include <string.h>
 #include <errno.h>
 #include <limits.h>
 #include <pthread.h>
 #include "http_header.h"
 #include "http.h"
 #include "util.h"
+#include "dynlib_cache.h"
 #include <sys/epoll.h>
+#include <dlfcn.h>
 
-#define DEFAULT_LISTEN_PORT 80
-#define MAX_LISTEN_QUEUE 100
-#define MAX_NAME_LENGTH 100
-#define MAX_READ_LENGTH 4096
-#define MAX_FD_LIMIT 100000
-#define MAX_EPOLL_EVENTS 100
-#define WORKER_THREAD_PORT 9898
-#define TRUE 1
-#define WORKER_THREAD_COUNT 4
+#define TRUE                    1
 
-#define EPOLL_TRIGGER_TYPE EPOLLET
+#define MAX_READ_LENGTH         4096
+#define DEFAULT_LISTEN_PORT     80
+#define MAX_LISTEN_QUEUE        10000
+#define MAX_NAME_LENGTH         100
+#define MAX_READ_LENGTH         4096
+#define MAX_FD_LIMIT            100000
+#define MAX_EPOLL_EVENTS        10000
+
+
+#define WORKER_THREAD_PORT      9898
+#define WORKER_THREAD_COUNT     4
+
+#define EPOLL_TRIGGER_TYPE      EPOLLET
+
+
+#ifdef DEBUG
+#define dbg_printf(...) printf(__VA_ARGS__)
+#else
+#define dbg_printf(...)
+#endif
+
 
 void add_client_worker_fd_to_epoll(int epollfd, int cli_fd, int worker_fd, int type)
 {
@@ -31,14 +46,15 @@ void add_client_worker_fd_to_epoll(int epollfd, int cli_fd, int worker_fd, int t
     conn->client_fd = cli_fd;
     conn->worker_fd = worker_fd;
     conn->type = type;
-    make_socket_non_blocking(cli_fd);
 
     event.data.ptr = conn;
     event.events = EPOLLIN | EPOLL_TRIGGER_TYPE;
 
     int fd_to_add = cli_fd;
     if (type == EVENT_OWNER_WORKER)
+    {
         fd_to_add = worker_fd;
+    }
 
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, fd_to_add, &event) == -1)
     {
@@ -57,7 +73,7 @@ int send_to_worker_thread(request_item* reqitem)
     serv_addr.sin_port = htons(WORKER_THREAD_PORT);
     if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr)<=0)
     {
-        printf("inet_pton error occured\n");
+        dbg_printf("inet_pton error occured\n");
         return -1;
     }
     if (connect(sockfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) == -1)
@@ -73,15 +89,12 @@ void handle_client_request(int epollfd, epoll_conn_state* con)
     http_header_t header;
     init_header(&header);
     http_scan_header(con->client_fd, &header);
-
-    printf("%s %s %s\n", header.request_url, header.request_type, header.request_http_version);
-
+    dbg_printf("YOOO: %s\n", header.request_url);
     request_item* reqitem = create_request_item(REQUEST_TYPE_DYNAMIC_CONTENT,
                                                         header.request_url);
-    printf("Work item created\n");
     int worker_fd = send_to_worker_thread(reqitem);
-    printf("Sent to worker thread\n");
-    make_socket_non_blocking(worker_fd);
+    free(reqitem);
+
     con->worker_fd = worker_fd;
 
     add_client_worker_fd_to_epoll(epollfd, con->client_fd, worker_fd, EVENT_OWNER_WORKER);
@@ -90,6 +103,16 @@ void handle_client_request(int epollfd, epoll_conn_state* con)
 
 void handle_client_response(int epollfd, epoll_conn_state* con)
 {
+    char buf[MAX_READ_LENGTH];
+    int read_count = 0;
+    int written_count = 0;
+    while ((read_count = read(con->worker_fd, buf + read_count, MAX_READ_LENGTH)) > 0)
+    {
+        dbg_printf("Read %d\n", read_count);
+        int a = rio_writen(con->client_fd, buf + written_count, read_count);
+        dbg_printf("Written %d\n", a);
+        written_count += read_count;
+    }
 }
 
 void worker_thread(void* arg)
@@ -98,18 +121,41 @@ void worker_thread(void* arg)
     free(arg);
     int server_sock = create_listen_tcp_socket(WORKER_THREAD_PORT, MAX_LISTEN_QUEUE, TRUE);
     /* Sequential server */
+    request_item item;
     while (1)
     {
-        int client_fd = Accept(server_sock, NULL, NULL);
-        printf("Got an FD at worker thread\n");
-        request_item item;
+        int client_fd = accept(server_sock, NULL, NULL);
+        if (client_fd == -1)
+            continue;
+
+        /* Read the request from the master */
         read(client_fd, &item, sizeof(request_item));
-        printf("Got request item for %s at %d\n", item.resource_url, thread_id);
+
+        char resource_name[MAX_NAME_LENGTH];
+        if (get_resource_type(item.resource_url, resource_name) == RESOURCE_TYPE_CGI_BIN)
+        {
+            char lib_path[MAX_DLL_NAME_LENGTH + MAX_DLL_PATH_LENGTH];
+            sprintf(lib_path, "./cgi-bin/%s.so", resource_name);
+            void* handle = load_dyn_library(lib_path);
+            if (handle == NULL)
+            {
+                http_write_response_header(client_fd, HTTP_404);
+            }
+            else
+            {
+                /* Success */
+                void (*func)(int) = dlsym(handle, "cgi_function");
+                func(client_fd);
+                unload_dyn_library(handle);
+            }
+        }
+        close(client_fd);
     }
 }
 
 int main(int argc, char *argv[])
 {
+    increase_fd_limit(MAX_FD_LIMIT);
     signal(SIGPIPE, SIG_IGN); /* Ignore Sigpipe */
     int port = parse_port_number(argc, argv[1]);
     if (port == -1)
@@ -128,7 +174,6 @@ int main(int argc, char *argv[])
     /* Event polling code begins */
     struct epoll_event listen_event;
     struct epoll_event *events;
-
     int epoll_fd = epoll_create1(0);
     if (epoll_fd == -1)
     {
@@ -143,12 +188,11 @@ int main(int argc, char *argv[])
     int ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_sock, &listen_event);
     if (ret == -1)
     {
-        perror("Epoll ctl");
+        perror("Epoll Ctl Add");
         exit(EXIT_FAILURE);
     }
 
     events = calloc(MAX_EPOLL_EVENTS, sizeof(struct epoll_event));
-
     /* Event loop */
     while (1)
     {
@@ -159,26 +203,32 @@ int main(int argc, char *argv[])
             if ((events[i].events & EPOLLERR) ||
                 (events[i].events & EPOLLHUP))
             {
-                fprintf (stderr, "epoll error\n");
-                close(events[i].data.fd);
-                continue;
+                epoll_conn_state* con = events[i].data.ptr;
+                Close(con->client_fd);
+                Close(con->worker_fd);
+                Free(con);
+                dbg_printf ("epoll error\n");
             }
             else if ((events[i].events & EPOLLIN) &&
                     (events[i].data.fd == server_sock))
             {
-                printf("New connection\n");
-                int cli_fd = Accept(server_sock, NULL, NULL);
-                if (cli_fd == -1)
+                static int count = 0;
+                while (1)
                 {
-                    if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
-                        break;
-                    else
+                    dbg_printf("MASTER: New connection %d\n", count++);
+                    int cli_fd = accept(server_sock, NULL, NULL);
+                    if (cli_fd == -1)
                     {
-                        perror("accept");
-                        exit(EXIT_FAILURE);
+                        if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
+                            break;
+                        else
+                        {
+                            perror("Client accept");
+                            exit(EXIT_FAILURE);
+                        }
                     }
+                    add_client_worker_fd_to_epoll(epoll_fd, cli_fd, -1 , EVENT_OWNER_CLIENT);
                 }
-                add_client_worker_fd_to_epoll(epoll_fd, cli_fd, -1 , EVENT_OWNER_CLIENT);
             }
             else if ((events[i].events & EPOLLIN))
             {
@@ -188,16 +238,21 @@ int main(int argc, char *argv[])
                     /* Worker is ready with the output.
                      * Send the output to the client */
                     handle_client_response(epoll_fd, con);
+                    Close(con->client_fd);
+                    Close(con->worker_fd);
+                    Free(con);
                 }
                 else
                 {
+                    dbg_printf("Sending request to worker\n");
                     /* Client's input is ready. Serve the HTTP request */
                     handle_client_request(epoll_fd, con);
                 }
             }
             else
             {
-                printf("UNKNOWN\n");
+                dbg_printf("Unknown Event type\n");
+                exit(EXIT_FAILURE);
             }
         }
     }
