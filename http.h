@@ -14,4 +14,5 @@
 
 int http_scan_header(int clientfd, http_header_t* header);
 int http_write_response_header(int clientfd, int http_response_code);
+int get_resource_type(char* url, char* resource_name);
 #endif

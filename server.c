@@ -1,215 +1,204 @@
-/*
- * HTTP/1.0 compliant concurrent server
- *
- * Features
- * ********
- * 1. Implements HTTP/1.0 GET requests for static and dynamic content.
- * 2. Assumes one connection per request (no persistent connections).
- * 3. Uses the CGI protocol to serve dynamic content.
- * 4. Serves HTML (.html), image (.gif and .jpg), and text (.txt) files.
- * 5. Accepts a single command-line argument: the port to listen on.
- * 6. Implements concurrency using threads.
- */
-
 #include <stdio.h>
+#include <netinet/in.h>
+#include <signal.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <limits.h>
 #include <pthread.h>
 #include "http_header.h"
 #include "http.h"
-#include "csapp.h"
-#include <sys/resource.h>
+#include "util.h"
+#include <sys/epoll.h>
 
 #define DEFAULT_LISTEN_PORT 80
 #define MAX_LISTEN_QUEUE 100
 #define MAX_NAME_LENGTH 100
 #define MAX_READ_LENGTH 4096
 #define MAX_FD_LIMIT 100000
+#define MAX_EPOLL_EVENTS 100
+#define WORKER_THREAD_PORT 9898
+#define TRUE 1
+#define WORKER_THREAD_COUNT 4
 
-int get_resource_type(char* url, char* resource_name)
+#define EPOLL_TRIGGER_TYPE EPOLLET
+
+void add_client_worker_fd_to_epoll(int epollfd, int cli_fd, int worker_fd, int type)
 {
-    if (sscanf(url, "/cgi-bin/%s", resource_name) == 1)
+    struct epoll_event event;
+    epoll_conn_state* conn = malloc(sizeof(epoll_conn_state));
+    conn->client_fd = cli_fd;
+    conn->worker_fd = worker_fd;
+    conn->type = type;
+    make_socket_non_blocking(cli_fd);
+
+    event.data.ptr = conn;
+    event.events = EPOLLIN | EPOLL_TRIGGER_TYPE;
+
+    int fd_to_add = cli_fd;
+    if (type == EVENT_OWNER_WORKER)
+        fd_to_add = worker_fd;
+
+    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, fd_to_add, &event) == -1)
     {
-        return RESOURCE_TYPE_CGI_BIN;
+        perror("epoll add client fd");
+        exit(EXIT_FAILURE);
     }
-    else if (sscanf(url, "/%s.html", resource_name) == 1)
-    {
-        return RESOURCE_TYPE_HTML;
-    }
-    else if (sscanf(url, "/%s.txt", resource_name) == 1)
-    {
-        return RESOURCE_TYPE_TXT;
-    }
-    else if (sscanf(url, "/%s.gif", resource_name) == 1)
-    {
-        return RESOURCE_TYPE_GIF;
-    }
-    else if (sscanf(url, "/%s.jpg", resource_name) == 1)
-    {
-        return RESOURCE_TYPE_JPG;
-    }
-    return RESOURCE_TYPE_UNKNOWN;
 }
 
-void handle_dynamic(int fd, char* resource_name)
+int send_to_worker_thread(request_item* reqitem)
 {
-    int pipe_fds[2];
-    if (pipe(pipe_fds) == -1)
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0)
+        error("ERROR opening socket");
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(WORKER_THREAD_PORT);
+    if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr)<=0)
     {
-        perror("pipe");
+        printf("inet_pton error occured\n");
+        return -1;
     }
-
-    if (fork() == 0)
+    if (connect(sockfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) == -1)
     {
-        /* Child */
-        close(STDOUT_FILENO);
-        close(pipe_fds[0]);
-        dup(pipe_fds[1]);
-        char *newargv[] = { resource_name, NULL };
-        if (execve(resource_name, newargv, NULL) == -1)
-        {
-            http_write_response_header(fd, HTTP_404);
-            perror("exec");
-            exit(EXIT_FAILURE);
-        }
+        perror("Connect to worker thread");
     }
-
-    /* Parent. Wait for the child to finish */
-    int status;
-    if (wait(&status) == -1)
-        perror("wait");
-
-    close(pipe_fds[1]);
-
-    if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_FAILURE)
-    {
-        http_write_response_header(fd, HTTP_200);
-        char buf[MAX_READ_LENGTH];
-        int read_cnt;
-        while((read_cnt = read(pipe_fds[0], buf, MAX_READ_LENGTH)) > 0)
-        {
-            write(fd, buf, read_cnt);
-        }
-    }
-    close(pipe_fds[0]);
+    rio_writen(sockfd, reqitem, sizeof(request_item));
+    return sockfd;
 }
 
-void handle_static(int fd, char* resource_name)
+void handle_client_request(int epollfd, epoll_conn_state* con)
 {
-    /* Now read and write the resource */
-    int filefd = open(resource_name, O_RDONLY);
-    if (filefd == -1)
-    {
-        perror("open");
-        http_write_response_header(fd, HTTP_404);
-        return;
-    }
-    http_write_response_header(fd, HTTP_200);
-    int read_count;
-    while ((read_count = sendfile(fd, filefd, 0, MAX_READ_LENGTH)) > 0);
-    if (read_count == -1)
-    {
-        perror("sendfile");
-	close(filefd);
-        return;
-    }
-    close(filefd);
-}
-
-void handle_unknown(int fd, char* resource_name)
-{
-    printf("Unknown resource type\n");
-}
-
-void* client_handler(void* arg)
-{
-    int fd = *((int*)arg);
-    free(arg);
-    /* This thread is independent, its resources like stack, etc should
-     * be freed automatically. */
-    if (pthread_detach(pthread_self()) == -1)
-    {
-        perror("Thread cannot be detached");
-        return (void*)-1;
-    }
-
     http_header_t header;
     init_header(&header);
-    http_scan_header(fd, &header);
+    http_scan_header(con->client_fd, &header);
 
-    char resource_name[MAX_NAME_LENGTH];
-    switch (get_resource_type(header.request_url, resource_name))
-    {
-        case RESOURCE_TYPE_CGI_BIN: handle_dynamic(fd, resource_name);
-                                    break;
-        case RESOURCE_TYPE_HTML:
-        case RESOURCE_TYPE_TXT:
-        case RESOURCE_TYPE_GIF:
-        case RESOURCE_TYPE_JPG:
-                                    handle_static(fd, resource_name);
-                                    break;
-        case RESOURCE_TYPE_UNKNOWN:
-                                    handle_unknown(fd, resource_name);
-                                    break;
-    }
+    printf("%s %s %s\n", header.request_url, header.request_type, header.request_http_version);
+
+    request_item* reqitem = create_request_item(REQUEST_TYPE_DYNAMIC_CONTENT,
+                                                        header.request_url);
+    printf("Work item created\n");
+    int worker_fd = send_to_worker_thread(reqitem);
+    printf("Sent to worker thread\n");
+    make_socket_non_blocking(worker_fd);
+    con->worker_fd = worker_fd;
+
+    add_client_worker_fd_to_epoll(epollfd, con->client_fd, worker_fd, EVENT_OWNER_WORKER);
     free_kvpairs_in_header(&header);
-    close(fd);
+}
+
+void handle_client_response(int epollfd, epoll_conn_state* con)
+{
+}
+
+void worker_thread(void* arg)
+{
+    int thread_id = *(int*)arg;
+    free(arg);
+    int server_sock = create_listen_tcp_socket(WORKER_THREAD_PORT, MAX_LISTEN_QUEUE, TRUE);
+    /* Sequential server */
+    while (1)
+    {
+        int client_fd = Accept(server_sock, NULL, NULL);
+        printf("Got an FD at worker thread\n");
+        request_item item;
+        read(client_fd, &item, sizeof(request_item));
+        printf("Got request item for %s at %d\n", item.resource_url, thread_id);
+    }
 }
 
 int main(int argc, char *argv[])
 {
-    signal(SIGPIPE, SIG_IGN);
-    /* Set resource limits */
-    struct rlimit res;
-    res.rlim_cur = MAX_FD_LIMIT;
-    res.rlim_max = MAX_FD_LIMIT;
-    if( setrlimit(RLIMIT_NOFILE, &res) == -1 )
+    signal(SIGPIPE, SIG_IGN); /* Ignore Sigpipe */
+    int port = parse_port_number(argc, argv[1]);
+    if (port == -1)
     {
-	perror("Resource FD limit");
-	exit(0);
+        fprintf(stderr, "Using default port number %d\n", DEFAULT_LISTEN_PORT);
+        port = DEFAULT_LISTEN_PORT;
     }
 
-    int port = DEFAULT_LISTEN_PORT;
-    if (argc == 2)
+    /* Create a new server socket */
+    int server_sock = create_listen_tcp_socket(port, MAX_LISTEN_QUEUE);
+    make_socket_non_blocking(server_sock);
+
+    /* Create worker threads */
+    create_worker_threads(WORKER_THREAD_COUNT, worker_thread);
+
+    /* Event polling code begins */
+    struct epoll_event listen_event;
+    struct epoll_event *events;
+
+    int epoll_fd = epoll_create1(0);
+    if (epoll_fd == -1)
     {
-        errno = 0;
-        port = strtol(argv[1], NULL, 10);
-        if (((port == LONG_MIN || port == LONG_MAX) && errno == ERANGE) || port == 0)
-        {
-            printf("Provide a valid port number\n");
-        }
+        perror("Epoll create");
+        exit(EXIT_FAILURE);
     }
-    else
+
+    /* Server's socket for IN events */
+    listen_event.data.fd = server_sock;
+    listen_event.events = EPOLLIN | EPOLL_TRIGGER_TYPE;
+
+    int ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_sock, &listen_event);
+    if (ret == -1)
     {
-        printf("Port not provided. Using the default port %d\n", DEFAULT_LISTEN_PORT);
+        perror("Epoll ctl");
+        exit(EXIT_FAILURE);
     }
 
-    /* Create a server socket */
-    int server_sock = Socket(AF_INET, SOCK_STREAM, 0);
+    events = calloc(MAX_EPOLL_EVENTS, sizeof(struct epoll_event));
 
-    /* Bind the socket to a port */
-    struct sockaddr_in server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(port);
-    server_addr.sin_family = AF_INET;
-    Bind(server_sock, (struct sockaddr*) &server_addr, sizeof(server_addr));
-
-    Listen(server_sock, MAX_LISTEN_QUEUE);
-
-    /* Accept concurrent connections */
-    struct sockaddr_in client_addr;
-    memset(&client_addr, 0, sizeof(client_addr));
-    int size = 0;
-    pthread_t thread_id;
-    int count = 0;
+    /* Event loop */
     while (1)
     {
-        int* client_fd = malloc(sizeof(int));
-        *client_fd = Accept(server_sock, (struct sockaddr*) &client_addr, &size);
-        pthread_create(&thread_id, NULL, client_handler, (void*) client_fd);
-        printf("Connection from a client %d\n", count);
-	count++;
+        int i;
+        int no_events = epoll_wait (epoll_fd, events, MAX_EPOLL_EVENTS, -1);
+        for (i = 0; i < no_events; i++)
+        {
+            if ((events[i].events & EPOLLERR) ||
+                (events[i].events & EPOLLHUP))
+            {
+                fprintf (stderr, "epoll error\n");
+                close(events[i].data.fd);
+                continue;
+            }
+            else if ((events[i].events & EPOLLIN) &&
+                    (events[i].data.fd == server_sock))
+            {
+                printf("New connection\n");
+                int cli_fd = Accept(server_sock, NULL, NULL);
+                if (cli_fd == -1)
+                {
+                    if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
+                        break;
+                    else
+                    {
+                        perror("accept");
+                        exit(EXIT_FAILURE);
+                    }
+                }
+                add_client_worker_fd_to_epoll(epoll_fd, cli_fd, -1 , EVENT_OWNER_CLIENT);
+            }
+            else if ((events[i].events & EPOLLIN))
+            {
+                epoll_conn_state* con = events[i].data.ptr;
+                if (con->type == EVENT_OWNER_WORKER)
+                {
+                    /* Worker is ready with the output.
+                     * Send the output to the client */
+                    handle_client_response(epoll_fd, con);
+                }
+                else
+                {
+                    /* Client's input is ready. Serve the HTTP request */
+                    handle_client_request(epoll_fd, con);
+                }
+            }
+            else
+            {
+                printf("UNKNOWN\n");
+            }
+        }
     }
-    close(server_sock);
 }

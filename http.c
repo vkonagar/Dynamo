@@ -2,6 +2,31 @@
 #include "csapp.h"
 #include <stdbool.h>
 
+int get_resource_type(char* url, char* resource_name)
+{
+    if (sscanf(url, "/cgi-bin/%s", resource_name) == 1)
+    {
+        return RESOURCE_TYPE_CGI_BIN;
+    }
+    else if (sscanf(url, "/%s.html", resource_name) == 1)
+    {
+        return RESOURCE_TYPE_HTML;
+    }
+    else if (sscanf(url, "/%s.txt", resource_name) == 1)
+    {
+        return RESOURCE_TYPE_TXT;
+    }
+    else if (sscanf(url, "/%s.gif", resource_name) == 1)
+    {
+        return RESOURCE_TYPE_GIF;
+    }
+    else if (sscanf(url, "/%s.jpg", resource_name) == 1)
+    {
+        return RESOURCE_TYPE_JPG;
+    }
+    return RESOURCE_TYPE_UNKNOWN;
+}
+
 int http_write_response_header(int clientfd, int http_response_code)
 {
     char* response_str;
