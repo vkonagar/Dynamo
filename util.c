@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/types.h>
+#include <sys/epoll.h>
 #include "util.h"
 
 int make_socket_non_blocking (int sfd)
@@ -97,4 +98,62 @@ request_item* create_request_item(int type, char* url)
     item->request_type = type;
     sprintf(item->resource_url, "%s", url);
     return item;
+}
+
+void add_client_fd_to_epoll(int epollfd, int cli_fd)
+{
+    struct epoll_event event;
+    epoll_conn_state* conn = malloc(sizeof(epoll_conn_state));
+    conn->client_fd = cli_fd;
+    conn->worker_fd = -1;
+    conn->type = EVENT_OWNER_CLIENT;
+
+    event.data.ptr = conn;
+    event.events = EPOLLIN | EPOLLET | EPOLLHUP | EPOLLERR;
+
+    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, cli_fd, &event) == -1)
+    {
+        perror("epoll add client fd");
+        exit(EXIT_FAILURE);
+    }
+}
+
+
+void add_worker_fd_to_epoll(int epollfd, int worker_fd, int cli_fd)
+{
+    struct epoll_event event;
+    epoll_conn_state* conn = malloc(sizeof(epoll_conn_state));
+    conn->client_fd = cli_fd;
+    conn->worker_fd = worker_fd;
+    conn->type = EVENT_OWNER_WORKER;
+
+    event.data.ptr = conn;
+    event.events = EPOLLIN | EPOLLHUP | EPOLLERR; /* Level triggered */
+
+    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, worker_fd, &event) == -1)
+    {
+        perror("epoll add client fd");
+        exit(EXIT_FAILURE);
+    }
+}
+
+int send_to_worker_thread(request_item* reqitem)
+{
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0)
+        error("ERROR opening socket");
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(WORKER_THREAD_PORT);
+    if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr)<=0)
+    {
+        dbg_printf("inet_pton error occured\n");
+        return -1;
+    }
+    if (connect(sockfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) == -1)
+    {
+        perror("Connect to worker thread");
+    }
+    rio_writen(sockfd, reqitem, sizeof(request_item));
+    return sockfd;
 }

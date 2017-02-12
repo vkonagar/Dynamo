@@ -17,91 +17,36 @@
 
 #define TRUE                    1
 
-#define MAX_READ_LENGTH         4096
+#define MAX_READ_LENGTH         4096000
 #define DEFAULT_LISTEN_PORT     80
 #define MAX_LISTEN_QUEUE        10000
 #define MAX_NAME_LENGTH         100
-#define MAX_READ_LENGTH         4096
 #define MAX_FD_LIMIT            100000
 #define MAX_EPOLL_EVENTS        10000
 
+#define WORKER_THREAD_COUNT     3
 
-#define WORKER_THREAD_PORT      9898
-#define WORKER_THREAD_COUNT     4
-
-#define EPOLL_TRIGGER_TYPE      EPOLLET
-
-
-#ifdef DEBUG
-#define dbg_printf(...) printf(__VA_ARGS__)
-#else
-#define dbg_printf(...)
-#endif
-
-
-void add_client_worker_fd_to_epoll(int epollfd, int cli_fd, int worker_fd, int type)
-{
-    struct epoll_event event;
-    epoll_conn_state* conn = malloc(sizeof(epoll_conn_state));
-    conn->client_fd = cli_fd;
-    conn->worker_fd = worker_fd;
-    conn->type = type;
-
-    event.data.ptr = conn;
-    event.events = EPOLLIN | EPOLL_TRIGGER_TYPE;
-
-    int fd_to_add = cli_fd;
-    if (type == EVENT_OWNER_WORKER)
-    {
-        fd_to_add = worker_fd;
-    }
-
-    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, fd_to_add, &event) == -1)
-    {
-        perror("epoll add client fd");
-        exit(EXIT_FAILURE);
-    }
-}
-
-int send_to_worker_thread(request_item* reqitem)
-{
-    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0)
-        error("ERROR opening socket");
-    struct sockaddr_in serv_addr;
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(WORKER_THREAD_PORT);
-    if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr)<=0)
-    {
-        dbg_printf("inet_pton error occured\n");
-        return -1;
-    }
-    if (connect(sockfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) == -1)
-    {
-        perror("Connect to worker thread");
-    }
-    rio_writen(sockfd, reqitem, sizeof(request_item));
-    return sockfd;
-}
+#define RESPONSE_HANDLING_COMPLETE  1
+#define RESPONSE_HANDLING_PARTIAL   2
 
 void handle_client_request(int epollfd, epoll_conn_state* con)
 {
+    dbg_printf("Handling client request\n");
     http_header_t header;
     init_header(&header);
     http_scan_header(con->client_fd, &header);
-    dbg_printf("YOOO: %s\n", header.request_url);
     request_item* reqitem = create_request_item(REQUEST_TYPE_DYNAMIC_CONTENT,
                                                         header.request_url);
     int worker_fd = send_to_worker_thread(reqitem);
     free(reqitem);
 
     con->worker_fd = worker_fd;
-
-    add_client_worker_fd_to_epoll(epollfd, con->client_fd, worker_fd, EVENT_OWNER_WORKER);
+    make_socket_non_blocking(worker_fd);
+    add_worker_fd_to_epoll(epollfd, worker_fd, con->client_fd);
     free_kvpairs_in_header(&header);
 }
 
-void handle_client_response(int epollfd, epoll_conn_state* con)
+int handle_client_response(int epollfd, epoll_conn_state* con)
 {
     char buf[MAX_READ_LENGTH];
     int read_count = 0;
@@ -113,6 +58,21 @@ void handle_client_response(int epollfd, epoll_conn_state* con)
         dbg_printf("Written %d\n", a);
         written_count += read_count;
     }
+    if (read_count == -1 && errno != EAGAIN)
+    {
+        perror("Error in handle_client_response");
+        exit(EXIT_FAILURE);
+    }
+    else if(read_count == 0)
+    {
+        dbg_printf("Phew! Read all the data.. \n");
+        return RESPONSE_HANDLING_COMPLETE;
+    }
+    else if(read_count == -1 && errno == EAGAIN)
+    {
+        dbg_printf("Not complete.. will try again\n");
+    }
+    return RESPONSE_HANDLING_PARTIAL;
 }
 
 void worker_thread(void* arg)
@@ -183,7 +143,7 @@ int main(int argc, char *argv[])
 
     /* Server's socket for IN events */
     listen_event.data.fd = server_sock;
-    listen_event.events = EPOLLIN | EPOLL_TRIGGER_TYPE;
+    listen_event.events = EPOLLIN | EPOLLET;
 
     int ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_sock, &listen_event);
     if (ret == -1)
@@ -204,18 +164,24 @@ int main(int argc, char *argv[])
                 (events[i].events & EPOLLHUP))
             {
                 epoll_conn_state* con = events[i].data.ptr;
-                Close(con->client_fd);
-                Close(con->worker_fd);
-                Free(con);
+                if (con->type == EVENT_OWNER_CLIENT ||
+                        con->type == EVENT_OWNER_WORKER)
+                {
+                    Close(con->client_fd);
+                    Close(con->worker_fd);
+                    Free(con);
+                }
+                else
+                {
+                    Close(events[i].data.fd);
+                }
                 dbg_printf ("epoll error\n");
             }
             else if ((events[i].events & EPOLLIN) &&
                     (events[i].data.fd == server_sock))
             {
-                static int count = 0;
                 while (1)
                 {
-                    dbg_printf("MASTER: New connection %d\n", count++);
                     int cli_fd = accept(server_sock, NULL, NULL);
                     if (cli_fd == -1)
                     {
@@ -227,7 +193,7 @@ int main(int argc, char *argv[])
                             exit(EXIT_FAILURE);
                         }
                     }
-                    add_client_worker_fd_to_epoll(epoll_fd, cli_fd, -1 , EVENT_OWNER_CLIENT);
+                    add_client_fd_to_epoll(epoll_fd, cli_fd);
                 }
             }
             else if ((events[i].events & EPOLLIN))
@@ -237,10 +203,14 @@ int main(int argc, char *argv[])
                 {
                     /* Worker is ready with the output.
                      * Send the output to the client */
-                    handle_client_response(epoll_fd, con);
-                    Close(con->client_fd);
-                    Close(con->worker_fd);
-                    Free(con);
+                    dbg_printf("Event worker\n");
+                    if (handle_client_response(epoll_fd, con) == RESPONSE_HANDLING_COMPLETE)
+                    {
+                        printf("Closing\n");
+                        Close(con->client_fd);
+                        Close(con->worker_fd);
+                        Free(con);
+                    }
                 }
                 else
                 {
