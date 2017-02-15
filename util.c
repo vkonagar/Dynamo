@@ -151,6 +151,7 @@ int create_worker_threads(int no_threads, void (*func)(void*))
 request_item* create_dynamic_request_item(char* name)
 {
     request_item* item = malloc(sizeof(request_item));
+    memset(item, 0, sizeof(item));
     sprintf(item->resource_name, "%s", name);
     return item;
 }
@@ -182,13 +183,14 @@ void add_client_fd_to_epoll(int epollfd, int cli_fd)
 }
 
 
-void add_worker_fd_to_epoll(int epollfd, int worker_fd, int cli_fd)
+void add_worker_fd_to_epoll(int epollfd, int worker_fd, epoll_conn_state* cli_con)
 {
     struct epoll_event event;
     epoll_conn_state* conn = malloc(sizeof(epoll_conn_state));
-    conn->client_fd = cli_fd;
+    conn->client_fd = cli_con->client_fd;
     conn->worker_fd = worker_fd;
     conn->type = EVENT_OWNER_WORKER;
+    conn->client_con = cli_con;
 
     event.data.ptr = conn;
     event.events = EPOLLIN | EPOLLHUP | EPOLLERR; /* Level triggered */
@@ -217,6 +219,6 @@ int send_to_worker_thread(request_item* reqitem)
     {
         perror("Connect to worker thread");
     }
-    rio_writen(sockfd, reqitem, sizeof(request_item));
+    rio_writen(sockfd, reqitem, sizeof(reqitem));
     return sockfd;
 }

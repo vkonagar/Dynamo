@@ -34,6 +34,7 @@ typedef struct epoll_conn_state
     int type; /* Who is handling this state */
     int client_fd;
     int worker_fd;
+    struct epoll_conn_state* client_con;
 }epoll_conn_state;
 
 typedef struct request_item
@@ -48,7 +49,7 @@ int make_socket_non_blocking(int fd);
 int create_worker_threads(int no_threads, void (*func)(void*));
 request_item* create_dynamic_request_item(char* name);
 request_item* create_static_request_item(char* name, int client_fd);
-void add_worker_fd_to_epoll(int epollfd, int worker_fd, int cli_fd);
+void add_worker_fd_to_epoll(int epollfd, int worker_fd, epoll_conn_state*);
 void add_client_fd_to_epoll(int epollfd, int cli_fd);
 int send_to_worker_thread(request_item* reqitem);
 void handle_static(int fd, char* resource_name);

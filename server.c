@@ -38,10 +38,10 @@ void handle_client_request(int epollfd, epoll_conn_state* con)
         case RESOURCE_TYPE_CGI_BIN:
                     reqitem = create_dynamic_request_item(resource_name);
                     int worker_fd = send_to_worker_thread(reqitem);
-                    free(reqitem);
+                    Free(reqitem);
                     con->worker_fd = worker_fd;
                     make_socket_non_blocking(worker_fd);
-                    add_worker_fd_to_epoll(epollfd, worker_fd, con->client_fd);
+                    add_worker_fd_to_epoll(epollfd, worker_fd, con);
                     break;
         case RESOURCE_TYPE_UNKNOWN:
                     dbg_printf("Unknown\n");
@@ -160,6 +160,7 @@ int main(int argc, char *argv[])
     }
 
     /* Server's socket for IN events */
+    memset(&listen_event, 0, sizeof(listen_event));
     listen_event.data.fd = server_sock;
     listen_event.events = EPOLLIN | EPOLLET;
 
@@ -223,6 +224,7 @@ int main(int argc, char *argv[])
                     {
                         Close(con->client_fd);
                         Close(con->worker_fd);
+                        Free(con->client_con);
                         Free(con);
                     }
                 }
