@@ -22,7 +22,6 @@
 
 #define SHARED_SOCKET       1
 
-#define DEBUG
 
 #ifdef DEBUG
 #define dbg_printf(...) printf(__VA_ARGS__)

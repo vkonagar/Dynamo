@@ -44,11 +44,11 @@ void handle_client_request(int epollfd, epoll_conn_state* con)
                     add_worker_fd_to_epoll(epollfd, worker_fd, con->client_fd);
                     break;
         case RESOURCE_TYPE_UNKNOWN:
-                    printf("Unknown\n");
+                    dbg_printf("Unknown\n");
                     break;
         default:
                     /* Handle static */
-                    printf("Resource name %s\n", resource_name);
+                    dbg_printf("Resource name %s\n", resource_name);
                     create_static_worker(con->client_fd, static_content_worker_thread,
                                         resource_name);
                     break;
@@ -224,7 +224,6 @@ int main(int argc, char *argv[])
                     dbg_printf("Event worker\n");
                     if (handle_client_response(epoll_fd, con) == RESPONSE_HANDLING_COMPLETE)
                     {
-                        printf("Closing\n");
                         Close(con->client_fd);
                         Close(con->worker_fd);
                         Free(con);
