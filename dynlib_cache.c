@@ -23,6 +23,7 @@ void* load_dyn_library(char* library_name)
 
 int unload_dyn_library(void* handle)
 {
+    return 1;
     if (dlclose(handle) < 0)
     {
         fprintf(stderr, "%s\n", dlerror());

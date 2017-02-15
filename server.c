@@ -15,34 +15,50 @@
 #include <sys/epoll.h>
 #include <dlfcn.h>
 
-#define TRUE                    1
-
-#define MAX_READ_LENGTH         4096000
-#define DEFAULT_LISTEN_PORT     80
-#define MAX_LISTEN_QUEUE        10000
-#define MAX_NAME_LENGTH         100
-#define MAX_FD_LIMIT            100000
-#define MAX_EPOLL_EVENTS        10000
-
-#define WORKER_THREAD_COUNT     3
-
+#define TRUE                        1
+#define DEFAULT_LISTEN_PORT         80
+#define MAX_LISTEN_QUEUE            10000
+#define MAX_NAME_LENGTH             100
+#define MAX_FD_LIMIT                100000
+#define MAX_EPOLL_EVENTS            10000
+#define WORKER_THREAD_COUNT         3
 #define RESPONSE_HANDLING_COMPLETE  1
 #define RESPONSE_HANDLING_PARTIAL   2
 
+void static_content_worker_thread(void* arg);
+
 void handle_client_request(int epollfd, epoll_conn_state* con)
 {
-    dbg_printf("Handling client request\n");
+    /* Create the header */
     http_header_t header;
     init_header(&header);
     http_scan_header(con->client_fd, &header);
-    request_item* reqitem = create_request_item(REQUEST_TYPE_DYNAMIC_CONTENT,
-                                                        header.request_url);
-    int worker_fd = send_to_worker_thread(reqitem);
-    free(reqitem);
 
-    con->worker_fd = worker_fd;
-    make_socket_non_blocking(worker_fd);
-    add_worker_fd_to_epoll(epollfd, worker_fd, con->client_fd);
+    request_item* reqitem;
+    char resource_name[MAX_RESOURCE_NAME_LENGTH];
+
+    switch (get_resource_type(header.request_url, resource_name))
+    {
+        case RESOURCE_TYPE_CGI_BIN:
+                    reqitem = create_dynamic_request_item(resource_name);
+                    int worker_fd = send_to_worker_thread(reqitem);
+                    free(reqitem);
+                    con->worker_fd = worker_fd;
+                    make_socket_non_blocking(worker_fd);
+                    add_worker_fd_to_epoll(epollfd, worker_fd, con->client_fd);
+                    break;
+        case RESOURCE_TYPE_UNKNOWN:
+                    printf("Unknown\n");
+                    break;
+        default:
+                    /* Handle static */
+                    printf("Resource name %s\n", resource_name);
+                    create_static_worker(con->client_fd, static_content_worker_thread,
+                                        resource_name);
+                    break;
+
+    }
+    /* Free the header */
     free_kvpairs_in_header(&header);
 }
 
@@ -75,10 +91,19 @@ int handle_client_response(int epollfd, epoll_conn_state* con)
     return RESPONSE_HANDLING_PARTIAL;
 }
 
-void worker_thread(void* arg)
+void dynamic_content_worker_thread(void* arg)
 {
     int thread_id = *(int*)arg;
     free(arg);
+
+    /* This thread is independent, its resources like stack, etc should
+     * be freed automatically. */
+    if (pthread_detach(pthread_self()) == -1)
+    {
+        perror("Thread cannot be detached");
+        return;
+    }
+
     int server_sock = create_listen_tcp_socket(WORKER_THREAD_PORT, MAX_LISTEN_QUEUE, TRUE);
     /* Sequential server */
     request_item item;
@@ -87,30 +112,26 @@ void worker_thread(void* arg)
         int client_fd = accept(server_sock, NULL, NULL);
         if (client_fd == -1)
             continue;
-
         /* Read the request from the master */
         read(client_fd, &item, sizeof(request_item));
-
-        char resource_name[MAX_NAME_LENGTH];
-        if (get_resource_type(item.resource_url, resource_name) == RESOURCE_TYPE_CGI_BIN)
-        {
-            char lib_path[MAX_DLL_NAME_LENGTH + MAX_DLL_PATH_LENGTH];
-            sprintf(lib_path, "./cgi-bin/%s.so", resource_name);
-            void* handle = load_dyn_library(lib_path);
-            if (handle == NULL)
-            {
-                http_write_response_header(client_fd, HTTP_404);
-            }
-            else
-            {
-                /* Success */
-                void (*func)(int) = dlsym(handle, "cgi_function");
-                func(client_fd);
-                unload_dyn_library(handle);
-            }
-        }
+        handle_dynamic_exec_lib(client_fd, item.resource_name);
         close(client_fd);
     }
+}
+
+void static_content_worker_thread(void* arg)
+{
+    request_item* item = (request_item*)arg;
+    /* This thread is independent, its resources like stack, etc should
+     * be freed automatically. */
+    if (pthread_detach(pthread_self()) == -1)
+    {
+        perror("Thread cannot be detached");
+        return;
+    }
+    handle_static(item->client_fd, item->resource_name);
+    close(item->client_fd);
+    free(item);
 }
 
 int main(int argc, char *argv[])
@@ -129,7 +150,7 @@ int main(int argc, char *argv[])
     make_socket_non_blocking(server_sock);
 
     /* Create worker threads */
-    create_worker_threads(WORKER_THREAD_COUNT, worker_thread);
+    create_worker_threads(WORKER_THREAD_COUNT, dynamic_content_worker_thread);
 
     /* Event polling code begins */
     struct epoll_event listen_event;

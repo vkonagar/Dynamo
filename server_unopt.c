@@ -26,17 +26,15 @@
 #define MAX_READ_LENGTH 4096
 #define MAX_FD_LIMIT 100000
 
-
 #ifdef DEBUG
 #define dbg_printf(...) printf(__VA_ARGS__)
 #else
 #define dbg_printf(...)
 #endif
 
-
-
-void handle_dynamic(int fd, char* resource_name)
+static void handle_dynamic(int fd, char* resource_name)
 {
+    printf("Forking\n");
     int pipe_fds[2];
     if (pipe(pipe_fds) == -1)
     {
@@ -78,8 +76,9 @@ void handle_dynamic(int fd, char* resource_name)
     close(pipe_fds[0]);
 }
 
-void handle_static(int fd, char* resource_name)
+static void handle_static(int fd, char* resource_name)
 {
+    printf("Resource: %s\n", resource_name);
     /* Now read and write the resource */
     int filefd = open(resource_name, O_RDONLY);
     if (filefd == -1)
@@ -94,15 +93,13 @@ void handle_static(int fd, char* resource_name)
     if (read_count == -1)
     {
         perror("sendfile");
-	close(filefd);
-        return;
     }
     close(filefd);
 }
 
-void handle_unknown(int fd, char* resource_name)
+static void handle_unknown(int fd, char* resource_name)
 {
-    dbg_printf("Unknown resource type\n");
+    printf("Unknown resource type\n");
 }
 
 void* client_handler(void* arg)

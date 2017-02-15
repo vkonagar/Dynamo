@@ -3,10 +3,13 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-#define EVENT_OWNER_CLIENT 1
-#define EVENT_OWNER_WORKER 2
+#define EVENT_OWNER_CLIENT  1
+#define EVENT_OWNER_WORKER  2
 
-#define WORKER_THREAD_PORT      9898
+#define MAX_RESOURCE_NAME_LENGTH    100
+#define WORKER_THREAD_PORT  9898
+
+#define MAX_READ_LENGTH     4096
 
 #define DEBUG
 
@@ -25,18 +28,20 @@ typedef struct epoll_conn_state
 
 typedef struct request_item
 {
-#define REQUEST_TYPE_DYNAMIC_CONTENT 1
-#define REQUEST_TYPE_STATIC_CONTENT 2
-    int request_type;
-    char resource_url[MAX_URL_LENGTH];
+    char resource_name[MAX_RESOURCE_NAME_LENGTH];
+    int client_fd; /* Required to perform sendfile directly for STATIC request type*/
 }request_item;
 
 int parse_port_number(int argc, char* argv);
 int increase_fd_limit(int max_fd_limit);
 int make_socket_non_blocking(int fd);
 int create_worker_threads(int no_threads, void (*func)(void*));
-request_item* create_request_item(int type, char* name);
+request_item* create_dynamic_request_item(char* name);
+request_item* create_static_request_item(char* name, int client_fd);
 void add_worker_fd_to_epoll(int epollfd, int worker_fd, int cli_fd);
 void add_client_fd_to_epoll(int epollfd, int cli_fd);
 int send_to_worker_thread(request_item* reqitem);
+void handle_static(int fd, char* resource_name);
+void handle_unknown(int fd, char* resource_name);
+void create_static_worker(int client_fd, void (*func)(void*), char* res_name);
 #endif

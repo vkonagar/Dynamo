@@ -9,6 +9,60 @@
 #include <sys/types.h>
 #include <sys/epoll.h>
 #include "util.h"
+#include "dynlib_cache.h"
+#include "dlfcn.h"
+
+void create_static_worker(int client_fd, void (*func)(void*), char* res_name)
+{
+    pthread_t thread_id;
+    printf("resnme %s\n", res_name);
+    request_item* item = create_static_request_item(res_name, client_fd);
+    pthread_create(&thread_id, NULL, func, (void*) item);
+}
+
+void handle_dynamic_exec_lib(int client_fd, char* resource_name)
+{
+    char lib_path[MAX_DLL_NAME_LENGTH + MAX_DLL_PATH_LENGTH];
+    sprintf(lib_path, "./cgi-bin/%s.so", resource_name);
+    void* handle = load_dyn_library(lib_path);
+    if (handle == NULL)
+    {
+        http_write_response_header(client_fd, HTTP_404);
+    }
+    else
+    {
+        /* Success */
+        void (*func)(int) = dlsym(handle, "cgi_function");
+        func(client_fd);
+        unload_dyn_library(handle);
+    }
+}
+
+void handle_static(int fd, char* resource_name)
+{
+    printf("Resource: %s\n", resource_name);
+    /* Now read and write the resource */
+    int filefd = open(resource_name, O_RDONLY);
+    if (filefd == -1)
+    {
+        perror("open");
+        http_write_response_header(fd, HTTP_404);
+        return;
+    }
+    http_write_response_header(fd, HTTP_200);
+    int read_count;
+    while ((read_count = sendfile(fd, filefd, 0, MAX_READ_LENGTH)) > 0);
+    if (read_count == -1)
+    {
+        perror("sendfile");
+    }
+    close(filefd);
+}
+
+void handle_unknown(int fd, char* resource_name)
+{
+    printf("Unknown resource type\n");
+}
 
 int make_socket_non_blocking (int sfd)
 {
@@ -92,11 +146,18 @@ int create_worker_threads(int no_threads, void (*func)(void*))
     }
 }
 
-request_item* create_request_item(int type, char* url)
+request_item* create_dynamic_request_item(char* name)
 {
     request_item* item = malloc(sizeof(request_item));
-    item->request_type = type;
-    sprintf(item->resource_url, "%s", url);
+    sprintf(item->resource_name, "%s", name);
+    return item;
+}
+
+request_item* create_static_request_item(char* name, int client_fd)
+{
+    request_item* item = malloc(sizeof(request_item));
+    sprintf(item->resource_name, "%s", name);
+    item->client_fd = client_fd;
     return item;
 }
 
