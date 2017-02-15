@@ -51,6 +51,7 @@ void handle_client_request(int epollfd, epoll_conn_state* con)
                     dbg_printf("Resource name %s\n", resource_name);
                     create_static_worker(con->client_fd, static_content_worker_thread,
                                         resource_name);
+                    Free(con);
                     break;
 
     }
@@ -89,9 +90,6 @@ int handle_client_response(int epollfd, epoll_conn_state* con)
 
 void dynamic_content_worker_thread(void* arg)
 {
-    int thread_id = *(int*)arg;
-    free(arg);
-
     /* This thread is independent, its resources like stack, etc should
      * be freed automatically. */
     if (pthread_detach(pthread_self()) == -1)

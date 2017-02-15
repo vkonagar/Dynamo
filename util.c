@@ -142,9 +142,7 @@ int create_worker_threads(int no_threads, void (*func)(void*))
     for(i=0; i<no_threads; i++)
     {
         pthread_t thread_id;
-        int* id = malloc(sizeof(int));
-        *id = i;
-        pthread_create(&thread_id, NULL, func, (void*) id);
+        pthread_create(&thread_id, NULL, func, NULL);
     }
 }
 
