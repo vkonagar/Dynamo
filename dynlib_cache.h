@@ -1,8 +1,5 @@
 #include <stdio.h>
-
-#define MAX_DLL_NAME_LENGTH 10
-#define MAX_DLL_PATH_LENGTH 10
-
+#include "util.h"
 struct dynlib_cache
 {
     char file_name[MAX_DLL_NAME_LENGTH];

@@ -9,7 +9,18 @@
 #define MAX_RESOURCE_NAME_LENGTH    100
 #define WORKER_THREAD_PORT  9898
 
+#define MAX_PATH_CHARS      10
+#define CGIBIN_DIR_NAME     "cgi-bin"
+#define STATIC_DIR_NAME     "static"
 #define MAX_READ_LENGTH     4096
+
+#define MAX_DLL_NAME_LENGTH 10
+#define MAX_DLL_PATH_LENGTH 10
+
+#define RESPONSE_HANDLING_COMPLETE  1
+#define RESPONSE_HANDLING_PARTIAL   2
+
+#define SHARED_SOCKET       1
 
 #define DEBUG
 

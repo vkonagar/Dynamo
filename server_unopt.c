@@ -18,6 +18,7 @@
 #include "http_header.h"
 #include "http.h"
 #include "csapp.h"
+#include "util.h"
 #include <sys/resource.h>
 
 #define DEFAULT_LISTEN_PORT 80
@@ -34,7 +35,10 @@
 
 static void handle_dynamic(int fd, char* resource_name)
 {
-    printf("Forking\n");
+    int path_len = MAX_DLL_NAME_LENGTH + strlen(CGIBIN_DIR_NAME) + MAX_PATH_CHARS;
+    char lib_path[path_len];
+    snprintf(lib_path, path_len, "./%s/%s", CGIBIN_DIR_NAME, resource_name);
+
     int pipe_fds[2];
     if (pipe(pipe_fds) == -1)
     {
@@ -48,7 +52,7 @@ static void handle_dynamic(int fd, char* resource_name)
         close(pipe_fds[0]);
         dup(pipe_fds[1]);
         char *newargv[] = { resource_name, NULL };
-        if (execve(resource_name, newargv, NULL) == -1)
+        if (execve(lib_path, newargv, NULL) == -1)
         {
             http_write_response_header(fd, HTTP_404);
             perror("exec");
@@ -74,32 +78,6 @@ static void handle_dynamic(int fd, char* resource_name)
         }
     }
     close(pipe_fds[0]);
-}
-
-static void handle_static(int fd, char* resource_name)
-{
-    printf("Resource: %s\n", resource_name);
-    /* Now read and write the resource */
-    int filefd = open(resource_name, O_RDONLY);
-    if (filefd == -1)
-    {
-        perror("open");
-        http_write_response_header(fd, HTTP_404);
-        return;
-    }
-    http_write_response_header(fd, HTTP_200);
-    int read_count;
-    while ((read_count = sendfile(fd, filefd, 0, MAX_READ_LENGTH)) > 0);
-    if (read_count == -1)
-    {
-        perror("sendfile");
-    }
-    close(filefd);
-}
-
-static void handle_unknown(int fd, char* resource_name)
-{
-    printf("Unknown resource type\n");
 }
 
 void* client_handler(void* arg)

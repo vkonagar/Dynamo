@@ -15,15 +15,11 @@
 #include <sys/epoll.h>
 #include <dlfcn.h>
 
-#define TRUE                        1
 #define DEFAULT_LISTEN_PORT         80
 #define MAX_LISTEN_QUEUE            10000
-#define MAX_NAME_LENGTH             100
 #define MAX_FD_LIMIT                100000
 #define MAX_EPOLL_EVENTS            10000
 #define WORKER_THREAD_COUNT         3
-#define RESPONSE_HANDLING_COMPLETE  1
-#define RESPONSE_HANDLING_PARTIAL   2
 
 void static_content_worker_thread(void* arg);
 
@@ -104,7 +100,8 @@ void dynamic_content_worker_thread(void* arg)
         return;
     }
 
-    int server_sock = create_listen_tcp_socket(WORKER_THREAD_PORT, MAX_LISTEN_QUEUE, TRUE);
+    int server_sock = create_listen_tcp_socket(WORKER_THREAD_PORT, MAX_LISTEN_QUEUE,
+                                            SHARED_SOCKET);
     /* Sequential server */
     request_item item;
     while (1)

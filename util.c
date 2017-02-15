@@ -15,15 +15,15 @@
 void create_static_worker(int client_fd, void (*func)(void*), char* res_name)
 {
     pthread_t thread_id;
-    printf("resnme %s\n", res_name);
     request_item* item = create_static_request_item(res_name, client_fd);
     pthread_create(&thread_id, NULL, func, (void*) item);
 }
 
 void handle_dynamic_exec_lib(int client_fd, char* resource_name)
 {
-    char lib_path[MAX_DLL_NAME_LENGTH + MAX_DLL_PATH_LENGTH];
-    sprintf(lib_path, "./cgi-bin/%s.so", resource_name);
+    int path_len = MAX_DLL_NAME_LENGTH + strlen(CGIBIN_DIR_NAME) + MAX_PATH_CHARS;
+    char lib_path[path_len];
+    snprintf(lib_path, path_len, "./%s/%s.so", CGIBIN_DIR_NAME, resource_name);
     void* handle = load_dyn_library(lib_path);
     if (handle == NULL)
     {
@@ -40,9 +40,11 @@ void handle_dynamic_exec_lib(int client_fd, char* resource_name)
 
 void handle_static(int fd, char* resource_name)
 {
-    printf("Resource: %s\n", resource_name);
+    int path_len = MAX_RESOURCE_NAME_LENGTH + strlen(STATIC_DIR_NAME) + MAX_PATH_CHARS;
+    char res_path[path_len];
+    snprintf(res_path, path_len, "./%s/%s", STATIC_DIR_NAME, resource_name);
     /* Now read and write the resource */
-    int filefd = open(resource_name, O_RDONLY);
+    int filefd = open(res_path, O_RDONLY);
     if (filefd == -1)
     {
         perror("open");

@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "util.h"
 #include <dlfcn.h>
 
 void* load_dyn_library(char* library_name)
