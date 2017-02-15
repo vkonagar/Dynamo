@@ -182,18 +182,15 @@ int main(int argc, char *argv[])
                 (events[i].events & EPOLLHUP))
             {
                 epoll_conn_state* con = events[i].data.ptr;
-                if (con->type == EVENT_OWNER_CLIENT ||
-                        con->type == EVENT_OWNER_WORKER)
+                switch(con->type)
                 {
-                    Close(con->client_fd);
-                    Close(con->worker_fd);
-                    Free(con);
+                    case EVENT_OWNER_WORKER:    Close(con->worker_fd);
+                                                /* Fall through */
+                    case EVENT_OWNER_CLIENT:    Close(con->client_fd);
+                                                Free(con);
+                                                break;
+                    default:                    Close(events[i].data.fd);
                 }
-                else
-                {
-                    Close(events[i].data.fd);
-                }
-                dbg_printf ("epoll error\n");
             }
             else if ((events[i].events & EPOLLIN) &&
                     (events[i].data.fd == server_sock))
