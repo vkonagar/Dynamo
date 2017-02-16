@@ -53,7 +53,6 @@ void handle_client_request(int epollfd, epoll_conn_state* con)
                                         resource_name);
                     Free(con);
                     break;
-
     }
     /* Free the header */
     free_kvpairs_in_header(&header);
@@ -108,7 +107,8 @@ void dynamic_content_worker_thread(void* arg)
         if (client_fd == -1)
             continue;
         /* Read the request from the master */
-        read(client_fd, &item, sizeof(request_item));
+        int r =rio_readn(client_fd, &item, sizeof(request_item));
+        printf("Read worker %d\n", r);
         handle_dynamic_exec_lib(client_fd, item.resource_name);
         close(client_fd);
     }
