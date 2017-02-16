@@ -217,6 +217,7 @@ int send_to_worker_thread(request_item* reqitem)
     {
         perror("Connect to worker thread");
     }
-    rio_writen(sockfd, reqitem, sizeof(reqitem));
+    int a = rio_writen(sockfd, reqitem, sizeof(request_item));
+    printf("Sent %d\n", a);
     return sockfd;
 }
