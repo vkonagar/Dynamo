@@ -143,7 +143,7 @@ int main(int argc, char *argv[])
         printf("Port not provided. Using the default port %d\n", DEFAULT_LISTEN_PORT);
     }
 
-    int server_sock = create_listen_tcp_socket(
+    int server_sock = create_listen_tcp_socket(port, MAX_LISTEN_QUEUE, NON_SHARED_SOCKET);
     /* Accept concurrent connections */
     struct sockaddr_in client_addr;
     memset(&client_addr, 0, sizeof(client_addr));

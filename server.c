@@ -210,7 +210,7 @@ int main(int argc, char *argv[])
                         }
                     }
                     static long con_cnt = 0;
-                    //printf("Connection %d\n", con_cnt++);
+                    printf("Connection %d\n", con_cnt++);
                     add_client_fd_to_epoll(epoll_fd, cli_fd);
                 }
             }
