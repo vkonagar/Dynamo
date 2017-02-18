@@ -11,17 +11,18 @@
 #include "http_header.h"
 #include "http.h"
 #include "util.h"
-#include "dynlib_cache.h"
 #include <sys/epoll.h>
+#include "csapp.h"
+#include "dynlib_cache.h"
 #include <dlfcn.h>
 
 #define DEFAULT_LISTEN_PORT         80
-#define MAX_LISTEN_QUEUE            10000
+#define MAX_LISTEN_QUEUE            100000
 #define MAX_FD_LIMIT                100000
 #define MAX_EPOLL_EVENTS            10000
 #define WORKER_THREAD_COUNT         3
 
-void static_content_worker_thread(void* arg);
+void* static_content_worker_thread(void* arg);
 
 void handle_client_request(int epollfd, epoll_conn_state* con)
 {
@@ -87,14 +88,14 @@ int handle_client_response(int epollfd, epoll_conn_state* con)
     return RESPONSE_HANDLING_PARTIAL;
 }
 
-void dynamic_content_worker_thread(void* arg)
+void* dynamic_content_worker_thread(void* arg)
 {
     /* This thread is independent, its resources like stack, etc should
      * be freed automatically. */
     if (pthread_detach(pthread_self()) == -1)
     {
         perror("Thread cannot be detached");
-        return;
+        return (void*)-1;
     }
 
     int server_sock = create_listen_tcp_socket(WORKER_THREAD_PORT, MAX_LISTEN_QUEUE,
@@ -108,13 +109,13 @@ void dynamic_content_worker_thread(void* arg)
             continue;
         /* Read the request from the master */
         int r = read(client_fd, &item, sizeof(request_item));
-        printf("Read worker %d\n", r);
         handle_dynamic_exec_lib(client_fd, item.resource_name);
         close(client_fd);
     }
+    return 0;
 }
 
-void static_content_worker_thread(void* arg)
+void* static_content_worker_thread(void* arg)
 {
     request_item* item = (request_item*)arg;
     /* This thread is independent, its resources like stack, etc should
@@ -122,11 +123,12 @@ void static_content_worker_thread(void* arg)
     if (pthread_detach(pthread_self()) == -1)
     {
         perror("Thread cannot be detached");
-        return;
+        return (void*)-1;
     }
     handle_static(item->client_fd, item->resource_name);
     close(item->client_fd);
     free(item);
+    return 0;
 }
 
 int main(int argc, char *argv[])
@@ -141,7 +143,7 @@ int main(int argc, char *argv[])
     }
 
     /* Create a new server socket */
-    int server_sock = create_listen_tcp_socket(port, MAX_LISTEN_QUEUE);
+    int server_sock = create_listen_tcp_socket(port, MAX_LISTEN_QUEUE, NON_SHARED_SOCKET);
     make_socket_non_blocking(server_sock);
 
     /* Create worker threads */
@@ -207,6 +209,8 @@ int main(int argc, char *argv[])
                             exit(EXIT_FAILURE);
                         }
                     }
+                    static long con_cnt = 0;
+                    //printf("Connection %d\n", con_cnt++);
                     add_client_fd_to_epoll(epoll_fd, cli_fd);
                 }
             }

@@ -1,5 +1,9 @@
+#ifndef DYNLIB_H
+#define DYBLIB_H
+
 #include <stdio.h>
 #include "util.h"
+
 struct dynlib_cache
 {
     char file_name[MAX_DLL_NAME_LENGTH];
@@ -9,3 +13,5 @@ struct dynlib_cache
 
 void* load_dyn_library(char* library_name);
 int unload_dyn_library(void* lib_handle);
+
+#endif

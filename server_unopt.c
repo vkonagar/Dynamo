@@ -143,19 +143,7 @@ int main(int argc, char *argv[])
         printf("Port not provided. Using the default port %d\n", DEFAULT_LISTEN_PORT);
     }
 
-    /* Create a server socket */
-    int server_sock = Socket(AF_INET, SOCK_STREAM, 0);
-
-    /* Bind the socket to a port */
-    struct sockaddr_in server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(port);
-    server_addr.sin_family = AF_INET;
-    Bind(server_sock, (struct sockaddr*) &server_addr, sizeof(server_addr));
-
-    Listen(server_sock, MAX_LISTEN_QUEUE);
-
+    int server_sock = create_listen_tcp_socket(
     /* Accept concurrent connections */
     struct sockaddr_in client_addr;
     memset(&client_addr, 0, sizeof(client_addr));
@@ -167,7 +155,7 @@ int main(int argc, char *argv[])
         int* client_fd = malloc(sizeof(int));
         *client_fd = Accept(server_sock, (struct sockaddr*) &client_addr, &size);
         pthread_create(&thread_id, NULL, client_handler, (void*) client_fd);
-        dbg_printf("Connection from a client %d\n", count);
+        printf("Connection from a client %d\n", count);
 	count++;
     }
     close(server_sock);

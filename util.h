@@ -21,8 +21,10 @@
 #define RESPONSE_HANDLING_PARTIAL   2
 
 #define SHARED_SOCKET       1
+#define NON_SHARED_SOCKET       2
 
-#define DEBUG
+//#define DEBUG
+
 #ifdef DEBUG
 #define dbg_printf(...) printf(__VA_ARGS__)
 #else
@@ -46,7 +48,7 @@ typedef struct request_item
 int parse_port_number(int argc, char* argv);
 int increase_fd_limit(int max_fd_limit);
 int make_socket_non_blocking(int fd);
-int create_worker_threads(int no_threads, void (*func)(void*));
+int create_worker_threads(int no_threads, void* (*func)(void*));
 request_item* create_dynamic_request_item(char* name);
 request_item* create_static_request_item(char* name, int client_fd);
 void add_worker_fd_to_epoll(int epollfd, int worker_fd, epoll_conn_state*);
@@ -54,5 +56,7 @@ void add_client_fd_to_epoll(int epollfd, int cli_fd);
 int send_to_worker_thread(request_item* reqitem);
 void handle_static(int fd, char* resource_name);
 void handle_unknown(int fd, char* resource_name);
-void create_static_worker(int client_fd, void (*func)(void*), char* res_name);
+void create_static_worker(int client_fd, void* (*func)(void*), char* res_name);
+int create_listen_tcp_socket(int port, int backlog, int socket_shared);
+void handle_dynamic_exec_lib(int client_fd, char* resource_name);
 #endif

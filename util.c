@@ -1,4 +1,5 @@
 #include <string.h>
+#include <sys/sendfile.h>
 #include <stdlib.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -11,8 +12,9 @@
 #include "util.h"
 #include "dynlib_cache.h"
 #include "dlfcn.h"
+#include "csapp.h"
 
-void create_static_worker(int client_fd, void (*func)(void*), char* res_name)
+void create_static_worker(int client_fd, void* (*func)(void*), char* res_name)
 {
     pthread_t thread_id;
     request_item* item = create_static_request_item(res_name, client_fd);
@@ -136,7 +138,7 @@ int create_listen_tcp_socket(int port, int backlog, int socket_shared)
     return sfd;
 }
 
-int create_worker_threads(int no_threads, void (*func)(void*))
+int create_worker_threads(int no_threads, void* (*func)(void*))
 {
     int i;
     for(i=0; i<no_threads; i++)
@@ -204,7 +206,9 @@ int send_to_worker_thread(request_item* reqitem)
 {
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0)
-        error("ERROR opening socket");
+    {
+        perror("ERROR opening socket");
+    }
     struct sockaddr_in serv_addr;
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(WORKER_THREAD_PORT);
