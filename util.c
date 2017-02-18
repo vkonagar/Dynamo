@@ -60,7 +60,7 @@ void handle_static(int fd, char* resource_name)
     {
         perror("sendfile");
     }
-    close(filefd);
+    Close(filefd);
 }
 
 void handle_unknown(int fd, char* resource_name)

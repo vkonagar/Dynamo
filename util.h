@@ -3,27 +3,27 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-#define EVENT_OWNER_CLIENT  1
-#define EVENT_OWNER_WORKER  2
+#define EVENT_OWNER_CLIENT          1
+#define EVENT_OWNER_WORKER          2
 
 #define MAX_RESOURCE_NAME_LENGTH    100
-#define WORKER_THREAD_PORT  9898
+#define WORKER_THREAD_PORT          9898
 
-#define MAX_PATH_CHARS      10
-#define CGIBIN_DIR_NAME     "cgi-bin"
-#define STATIC_DIR_NAME     "static"
-#define MAX_READ_LENGTH     4096
+#define MAX_PATH_CHARS              10
+#define CGIBIN_DIR_NAME             "cgi-bin"
+#define STATIC_DIR_NAME             "static"
+#define MAX_READ_LENGTH             4096
 
-#define MAX_DLL_NAME_LENGTH 20
-#define MAX_DLL_PATH_LENGTH 20
+#define MAX_DLL_NAME_LENGTH         20
+#define MAX_DLL_PATH_LENGTH         20
 
 #define RESPONSE_HANDLING_COMPLETE  1
 #define RESPONSE_HANDLING_PARTIAL   2
 
-#define SHARED_SOCKET       1
-#define NON_SHARED_SOCKET       2
+#define SHARED_SOCKET               1
+#define NON_SHARED_SOCKET           2
 
-//#define DEBUG
+#define DEBUG
 
 #ifdef DEBUG
 #define dbg_printf(...) printf(__VA_ARGS__)
