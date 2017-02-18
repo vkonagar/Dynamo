@@ -17,10 +17,14 @@
 #include <dlfcn.h>
 
 #define DEFAULT_LISTEN_PORT         80
-#define MAX_LISTEN_QUEUE            100000
+#define MAX_LISTEN_QUEUE            100000  /* Avoids connection resets */
 #define MAX_FD_LIMIT                100000
-#define MAX_EPOLL_EVENTS            10000
-#define WORKER_THREAD_COUNT         3
+#define MAX_EPOLL_EVENTS            100000  /* Determines how many outstanding
+                                              events in the system that can
+                                              be delivered */
+#define WORKER_THREAD_COUNT         3       /* Tune this parameter according
+                                               to number of cores in the
+                                               system */
 
 void* static_content_worker_thread(void* arg);
 
@@ -47,8 +51,7 @@ void handle_client_request(int epollfd, epoll_conn_state* con)
         case RESOURCE_TYPE_UNKNOWN:
                     dbg_printf("Unknown\n");
                     break;
-        default:
-                    /* Handle static */
+        default:    /* Handle static */
                     dbg_printf("Resource name %s\n", resource_name);
                     create_static_worker(con->client_fd, static_content_worker_thread,
                                         resource_name);
@@ -63,13 +66,11 @@ int handle_client_response(int epollfd, epoll_conn_state* con)
 {
     char buf[MAX_READ_LENGTH];
     int read_count = 0;
-    int written_count = 0;
-    while ((read_count = read(con->worker_fd, buf + read_count, MAX_READ_LENGTH)) > 0)
+    while ((read_count = read(con->worker_fd, buf, MAX_READ_LENGTH)) > 0)
     {
         dbg_printf("Read %d\n", read_count);
-        int a = rio_writen(con->client_fd, buf + written_count, read_count);
+        int a = rio_writen(con->client_fd, buf, read_count);
         dbg_printf("Written %d\n", a);
-        written_count += read_count;
     }
     if (read_count == -1 && errno != EAGAIN)
     {
@@ -110,7 +111,7 @@ void* dynamic_content_worker_thread(void* arg)
         /* Read the request from the master */
         int r = read(client_fd, &item, sizeof(request_item));
         handle_dynamic_exec_lib(client_fd, item.resource_name);
-        close(client_fd);
+        Close(client_fd);
     }
     return 0;
 }
@@ -126,7 +127,7 @@ void* static_content_worker_thread(void* arg)
         return (void*)-1;
     }
     handle_static(item->client_fd, item->resource_name);
-    close(item->client_fd);
+    Close(item->client_fd);
     free(item);
     return 0;
 }
@@ -210,7 +211,7 @@ int main(int argc, char *argv[])
                         }
                     }
                     static long con_cnt = 0;
-                    printf("Connection %d\n", con_cnt++);
+                    //printf("Connection %d\n", con_cnt++);
                     add_client_fd_to_epoll(epoll_fd, cli_fd);
                 }
             }

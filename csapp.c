@@ -342,8 +342,9 @@ off_t Lseek(int fildes, off_t offset, int whence)
 
 void Close(int fd)
 {
-    /* Avoid exiting the program */
-    close(fd);
+    int a = close(fd);
+    if (a < 0 )
+        unix_error("close error");
 }
 
 int Select(int  n, fd_set *readfds, fd_set *writefds,
