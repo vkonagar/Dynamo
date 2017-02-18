@@ -13,7 +13,7 @@ void cgi_function(int fd)
 
     strftime(timeString, sizeof(timeString), "%H:%M:%S", time_info);
 
-    char string[600];
+    char string[6000];
     sprintf(string, "%s", "HTTP/1.0 200 OK\n");
     sprintf(string, "%s%s", string, "Content-Type: text/html\n\n");
     sprintf(string, "%s%s", string, "<html><head>\n");
@@ -21,7 +21,14 @@ void cgi_function(int fd)
     sprintf(string, "%s%s", string, "</head>\n");
     sprintf(string, "%s%s", string, "<body>\n");
     sprintf(string, "%s%s", string, "<h1>");
-    sprintf(string, "%s%s", string, timeString);
+
+    srand(time(NULL));
+    int r = rand();    //returns a pseudo-random integer between 0 and RAND_MAX
+    int i;
+    for(i=0;i<r%100;i++)
+    {
+        sprintf(string, "%s%s", string, timeString);
+    }
     sprintf(string, "%s%s", string, "</h1>\n");
     sprintf(string, "%s%s", string, "</body> </html>\r\n");
     write(fd, string, strlen(string));
