@@ -111,6 +111,7 @@ void* client_handler(void* arg)
                                     handle_unknown(fd, resource_name);
                                     break;
     }
+    increment_reply_count();
     free_kvpairs_in_header(&header);
     close(fd);
 }
@@ -124,8 +125,8 @@ int main(int argc, char *argv[])
     res.rlim_max = MAX_FD_LIMIT;
     if( setrlimit(RLIMIT_NOFILE, &res) == -1 )
     {
-	perror("Resource FD limit");
-	exit(0);
+	    perror("Resource FD limit");
+	    exit(0);
     }
 
     int port = DEFAULT_LISTEN_PORT;
@@ -143,20 +144,23 @@ int main(int argc, char *argv[])
         printf("Port not provided. Using the default port %d\n", DEFAULT_LISTEN_PORT);
     }
 
+    /* Initialize stat mutex */
+    init_stat_mutexes();
+    /* Create stat thread */
+    create_stat_thread();
+
     int server_sock = create_listen_tcp_socket(port, MAX_LISTEN_QUEUE, NON_SHARED_SOCKET);
     /* Accept concurrent connections */
     struct sockaddr_in client_addr;
     memset(&client_addr, 0, sizeof(client_addr));
     int size = 0;
     pthread_t thread_id;
-    int count = 0;
     while (1)
     {
         int* client_fd = malloc(sizeof(int));
         *client_fd = Accept(server_sock, (struct sockaddr*) &client_addr, &size);
         pthread_create(&thread_id, NULL, client_handler, (void*) client_fd);
-        printf("Connection from a client %d\n", count);
-	count++;
+        increment_request_count();
     }
     close(server_sock);
 }

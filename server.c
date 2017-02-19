@@ -17,7 +17,6 @@
 #include <dlfcn.h>
 
 #define DEFAULT_LISTEN_PORT         80
-#define STAT_INTERVAL               5
 #define MAX_LISTEN_QUEUE            100000  /* Avoids connection resets */
 #define MAX_FD_LIMIT                100000
 #define MAX_EPOLL_EVENTS            100000  /* Determines how many outstanding
@@ -27,10 +26,6 @@
                                                to number of cores in the
                                                system */
 void* static_content_worker_thread(void* arg);
-
-static long request_cnt = 0;
-static long reply_cnt = 0;
-static pthread_mutex_t replycnt_mutex;
 
 void handle_client_request(int epollfd, epoll_conn_state* con)
 {
@@ -136,29 +131,6 @@ void* static_content_worker_thread(void* arg)
     return 0;
 }
 
-void* statistics_thread(void* arg)
-{
-    if (pthread_detach(pthread_self()) == -1)
-    {
-        perror("Thread cannot be detached");
-        return (void*)-1;
-    }
-    int replys = 0;
-    int last_replys = 0;
-    int last_requests = 0;
-    while (1)
-    {
-        long replys = get_reply_count(&reply_cnt, &replycnt_mutex);
-        long requests = request_cnt;
-        printf("REQ: %ld\tREP: %ld\tREQ_Rate:%ld\tREP_Rate:%ld\n",
-                requests, replys, (replys - last_replys) / STAT_INTERVAL,
-                                    (requests - last_requests) / STAT_INTERVAL);
-        last_replys = replys;
-        last_requests = requests;
-        sleep(STAT_INTERVAL);
-    }
-}
-
 int main(int argc, char *argv[])
 {
     increase_fd_limit(MAX_FD_LIMIT);
@@ -170,13 +142,6 @@ int main(int argc, char *argv[])
         port = DEFAULT_LISTEN_PORT;
     }
 
-    /* Initialize mutex */
-    if (pthread_mutex_init(&replycnt_mutex, NULL) != 0)
-    {
-        perror("mutex init");
-        exit(EXIT_FAILURE);
-    }
-
     /* Create a new server socket */
     int server_sock = create_listen_tcp_socket(port, MAX_LISTEN_QUEUE, NON_SHARED_SOCKET);
     make_socket_non_blocking(server_sock);
@@ -184,8 +149,10 @@ int main(int argc, char *argv[])
     /* Create worker threads */
     create_threads(WORKER_THREAD_COUNT, dynamic_content_worker_thread);
 
+    /* Initialize stat mutex */
+    init_stat_mutexes();
     /* Create stat thread */
-    create_threads(1, statistics_thread);
+    create_stat_thread();
 
     /* Event polling code begins */
     struct epoll_event listen_event;
@@ -247,7 +214,7 @@ int main(int argc, char *argv[])
                             exit(EXIT_FAILURE);
                         }
                     }
-                    request_cnt++; /* Global accepted conn. count */
+                    increment_request_count(); /* Global accepted conn. count */
                     add_client_fd_to_epoll(epoll_fd, cli_fd);
                 }
             }
@@ -265,7 +232,7 @@ int main(int argc, char *argv[])
                         Close(con->worker_fd);
                         Free(con->client_con);
                         Free(con);
-                        increment_reply_count(&reply_cnt, &replycnt_mutex);
+                        increment_reply_count();
                     }
                 }
                 else

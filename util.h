@@ -4,6 +4,8 @@
 #include "http_util.h"
 #include <pthread.h>
 
+#define STAT_INTERVAL               5
+
 #define EVENT_OWNER_CLIENT          1
 #define EVENT_OWNER_WORKER          2
 
@@ -44,8 +46,8 @@ typedef struct request_item
     int client_fd; /* Required to perform sendfile directly for STATIC request type*/
 }request_item;
 
-void increment_reply_count(long* count, pthread_mutex_t* mutex);
-long get_reply_count(long* count, pthread_mutex_t* mutex);
+void increment_reply_count();
+long get_reply_count();
 int parse_port_number(int argc, char* argv);
 int increase_fd_limit(int max_fd_limit);
 int make_socket_non_blocking(int fd);
@@ -60,4 +62,7 @@ void handle_unknown(int fd, char* resource_name);
 void create_static_worker(int client_fd, void* (*func)(void*), char* res_name);
 int create_listen_tcp_socket(int port, int backlog, int socket_shared);
 void handle_dynamic_exec_lib(int client_fd, char* resource_name);
+void init_stat_mutexes();
+void increment_request_count();
+long get_request_count();
 #endif

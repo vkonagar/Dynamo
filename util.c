@@ -14,6 +14,10 @@
 #include "dlfcn.h"
 #include "csapp.h"
 
+static long request_cnt = 0;
+static long reply_cnt = 0;
+static pthread_mutex_t replycnt_mutex;
+
 void create_static_worker(int client_fd, void* (*func)(void*), char* res_name)
 {
     pthread_t thread_id;
@@ -226,17 +230,65 @@ int send_to_worker_thread(request_item* reqitem)
     return sockfd;
 }
 
-void increment_reply_count(long* count, pthread_mutex_t* replies_mutex)
+void increment_reply_count()
 {
-    pthread_mutex_lock(replies_mutex);
-    (*count)++;
-    pthread_mutex_unlock(replies_mutex);
+    pthread_mutex_lock(&replycnt_mutex);
+    reply_cnt++;
+    pthread_mutex_unlock(&replycnt_mutex);
 }
 
-long get_reply_count(long* count, pthread_mutex_t* replies_mutex)
+long get_reply_count()
 {
-    pthread_mutex_lock(replies_mutex);
-    int res = (*count);
-    pthread_mutex_unlock(replies_mutex);
+    pthread_mutex_lock(&replycnt_mutex);
+    int res = (reply_cnt);
+    pthread_mutex_unlock(&replycnt_mutex);
     return res;
+}
+
+/* Only main thread increments this. No mutex required */
+long get_request_count()
+{
+    return request_cnt;
+}
+
+void increment_request_count()
+{
+    request_cnt++;
+}
+
+void init_stat_mutexes()
+{
+    if (pthread_mutex_init(&replycnt_mutex, NULL) != 0)
+    {
+        perror("mutex init");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void* statistics_thread(void* arg)
+{
+    if (pthread_detach(pthread_self()) == -1)
+    {
+        perror("Thread cannot be detached");
+        return (void*)-1;
+    }
+    int replys = 0;
+    int last_replys = 0;
+    int last_requests = 0;
+    while (1)
+    {
+        long replys = get_reply_count(&reply_cnt, &replycnt_mutex);
+        long requests = request_cnt;
+        printf("REQ: %ld\tREP: %ld\tREQ_Rate:%ld\tREP_Rate:%ld\n",
+                requests, replys, (replys - last_replys) / STAT_INTERVAL,
+                                    (requests - last_requests) / STAT_INTERVAL);
+        last_replys = replys;
+        last_requests = requests;
+        sleep(STAT_INTERVAL);
+    }
+}
+
+void create_stat_thread()
+{
+    create_threads(1, statistics_thread);
 }
