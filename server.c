@@ -1,3 +1,16 @@
+/*
+ * HTTP/1.0 compliant high performance dynamic content server.
+ *
+ * Features
+ * ********
+ * 1. Implements HTTP/1.0 GET requests for static and dynamic content.
+ * 2. Assumes one connection per request (no persistent connections).
+ * 3. Uses worker threads with dynamic loading of (.so) to achieve faster dynamic
+	content generation.
+ * 4. Serves HTML (.html), image (.gif and .jpg), and text (.txt) files.
+ * 5. Accepts a single command-line argument: the port to listen on.
+ * 6. Implements concurrency using IO Multiplexing and worker threads.
+ */
 #include <stdio.h>
 #include <netinet/in.h>
 #include <signal.h>
