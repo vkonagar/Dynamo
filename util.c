@@ -279,7 +279,7 @@ void* statistics_thread(void* arg)
     {
         long replys = get_reply_count(&reply_cnt, &replycnt_mutex);
         long requests = request_cnt;
-        printf("REQ: %ld\tREP: %ld\tREQ_Rate:%ld\tREP_Rate:%ld\n",
+        printf("REQ: %ld\tREP: %ld\tREQ_Rate(/sec):%ld \tREP_Rate(/sec):%ld \n",
                 requests, replys, (replys - last_replys) / STAT_INTERVAL,
                                     (requests - last_requests) / STAT_INTERVAL);
         last_replys = replys;
