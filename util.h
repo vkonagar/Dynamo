@@ -65,4 +65,5 @@ void handle_dynamic_exec_lib(int client_fd, char* resource_name);
 void init_stat_mutexes();
 void increment_request_count();
 long get_request_count();
+void create_stat_thread();
 #endif
