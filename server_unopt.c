@@ -107,8 +107,7 @@ void* client_handler(void* arg)
         case RESOURCE_TYPE_JPG:
                                     handle_static(fd, resource_name);
                                     break;
-        case RESOURCE_TYPE_UNKNOWN:
-                                    handle_unknown(fd, resource_name);
+        case RESOURCE_TYPE_UNKNOWN: dbg_printf("Unknown request type\n");
                                     break;
     }
     increment_reply_count();

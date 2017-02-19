@@ -1,3 +1,10 @@
+/*
+ * Utility functions used by the server.c and server_unopt.c
+ *
+ * Author: Vamshi Reddy Konagari
+ * Email: vkonagar@andrew.cmu.edu
+ * Date: 2/19/2017
+ */
 #include <string.h>
 #include <sys/sendfile.h>
 #include <stdlib.h>
@@ -14,10 +21,12 @@
 #include "dlfcn.h"
 #include "csapp.h"
 
+/* Statistics data */
 static long request_cnt = 0;
 static long reply_cnt = 0;
 static pthread_mutex_t replycnt_mutex;
 
+/* Creates a worker for static request */
 void create_static_worker(int client_fd, void* (*func)(void*), char* res_name)
 {
     pthread_t thread_id;
@@ -25,6 +34,7 @@ void create_static_worker(int client_fd, void* (*func)(void*), char* res_name)
     pthread_create(&thread_id, NULL, func, (void*) item);
 }
 
+/* Loads and runs the required .so module for the request */
 void handle_dynamic_exec_lib(int client_fd, char* resource_name)
 {
     int path_len = MAX_DLL_NAME_LENGTH + strlen(CGIBIN_DIR_NAME) + MAX_PATH_CHARS;
@@ -44,6 +54,7 @@ void handle_dynamic_exec_lib(int client_fd, char* resource_name)
     }
 }
 
+/* Handler for static request type (html, txt, jpg, etc) */
 void handle_static(int fd, char* resource_name)
 {
     int path_len = MAX_RESOURCE_NAME_LENGTH + strlen(STATIC_DIR_NAME) + MAX_PATH_CHARS;
@@ -65,11 +76,6 @@ void handle_static(int fd, char* resource_name)
         perror("sendfile");
     }
     Close(filefd);
-}
-
-void handle_unknown(int fd, char* resource_name)
-{
-    printf("Unknown resource type\n");
 }
 
 int make_socket_non_blocking (int sfd)
@@ -107,7 +113,7 @@ int increase_fd_limit(int max_fds)
 
 int parse_port_number(int argc, char* argv)
 {
-    if (argc == 2)
+    if (argc == SERVER_REQUIRED_CMD_ARG_COUNT)
     {
         errno = 0;
         int port = strtol(argv, NULL, 10);
@@ -126,9 +132,11 @@ int create_listen_tcp_socket(int port, int backlog, int socket_shared)
     int sfd = Socket(AF_INET, SOCK_STREAM, 0);
     if (socket_shared)
     {
+        /* This socket is shared by more than one thread */
         int optval = 1;
         setsockopt(sfd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
     }
+    /* Reuse the socket in multiple instantiations of the same server */
     int optval = 1;
     setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
     /* Bind the socket to a port */
@@ -142,6 +150,7 @@ int create_listen_tcp_socket(int port, int backlog, int socket_shared)
     return sfd;
 }
 
+/* API to create 'no_thread' of threads with 'func' */
 int create_threads(int no_threads, void* (*func)(void*))
 {
     int i;
@@ -152,6 +161,7 @@ int create_threads(int no_threads, void* (*func)(void*))
     }
 }
 
+/* Create request items for communication between master and worker threads */
 request_item* create_dynamic_request_item(char* name)
 {
     request_item* item = malloc(sizeof(request_item));
@@ -160,9 +170,11 @@ request_item* create_dynamic_request_item(char* name)
     return item;
 }
 
+/* Create request items for communication between master and worker threads */
 request_item* create_static_request_item(char* name, int client_fd)
 {
     request_item* item = malloc(sizeof(request_item));
+    memset(item, 0, sizeof(item));
     sprintf(item->resource_name, "%s", name);
     item->client_fd = client_fd;
     return item;
@@ -178,7 +190,9 @@ void add_client_fd_to_epoll(int epollfd, int cli_fd)
 
     event.data.ptr = conn;
     event.events = EPOLLIN | EPOLLET | EPOLLHUP | EPOLLERR;
-
+                    /* Edge triggered client.
+                     * We get all the contents of a request from client in
+                     * one shot */
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, cli_fd, &event) == -1)
     {
         perror("epoll add client fd");
@@ -197,8 +211,10 @@ void add_worker_fd_to_epoll(int epollfd, int worker_fd, epoll_conn_state* cli_co
     conn->client_con = cli_con;
 
     event.data.ptr = conn;
-    event.events = EPOLLIN | EPOLLHUP | EPOLLERR; /* Level triggered */
-
+    event.events = EPOLLIN | EPOLLHUP | EPOLLERR; /* Level triggered
+                                                     Worker generates a lot of
+                                                     output. We won't get all of
+                                                     it in one go */
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, worker_fd, &event) == -1)
     {
         perror("epoll add client fd");
@@ -226,10 +242,10 @@ int send_to_worker_thread(request_item* reqitem)
         perror("Connect to worker thread");
     }
     int a = rio_writen(sockfd, reqitem, sizeof(request_item));
-    dbg_printf("Sent ---> %d\n", a);
     return sockfd;
 }
 
+/* All worker threads increment this. */
 void increment_reply_count()
 {
     pthread_mutex_lock(&replycnt_mutex);
@@ -237,6 +253,7 @@ void increment_reply_count()
     pthread_mutex_unlock(&replycnt_mutex);
 }
 
+/* All worker threads use this. */
 long get_reply_count()
 {
     pthread_mutex_lock(&replycnt_mutex);
@@ -251,6 +268,7 @@ long get_request_count()
     return request_cnt;
 }
 
+/* Only main thread increments this. No mutex required */
 void increment_request_count()
 {
     request_cnt++;
@@ -265,6 +283,8 @@ void init_stat_mutexes()
     }
 }
 
+/* This presents the connection rate and other server performance metrics
+ * every STAT_INTERVAL seconds */
 void* statistics_thread(void* arg)
 {
     if (pthread_detach(pthread_self()) == -1)

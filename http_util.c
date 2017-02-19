@@ -1,7 +1,17 @@
+/* Utility function to process HTTP requests and replies.
+ *
+ * Author: Vamshi Reddy Konagar (vkonagar)
+ * Date: 2/19/2017
+ * Email: vkonagar@andrew.cmu.edu
+ */
 #include "http_util.h"
 #include "csapp.h"
 #include <stdbool.h>
 
+/* Determines the resource type from URL and writes the resource name back.
+ * Ex: /cgi-bin/vamshi has resource type of RESOURCE_TYPE_CGI_BIN and
+ *      writes back vamshi in 'resource_name'
+ */
 int get_resource_type(char* url, char* resource_name)
 {
     if (sscanf(url, "/cgi-bin/%s", resource_name) == 1)
@@ -27,6 +37,7 @@ int get_resource_type(char* url, char* resource_name)
     return RESOURCE_TYPE_UNKNOWN;
 }
 
+/* Writes response to a given file descriptor (socket) */
 int http_write_response_header(int clientfd, int http_response_code)
 {
     char* response_str;
@@ -41,6 +52,7 @@ int http_write_response_header(int clientfd, int http_response_code)
     write(clientfd, "\r\n", 2);
 }
 
+/* Reads and scans HTTP header from clientfd and writes back at 'header' */
 int http_scan_header(int clientfd, http_header_t* header)
 {
     rio_t rio; /* For robust IO */

@@ -1,5 +1,5 @@
-#ifndef HTTP_PROTO_H
-#define HTTP_PROTO_H
+#ifndef __HTTP_PROTO_H
+#define __HTTP_PROTO_H
 #include "http_header.h"
 
 #define RESOURCE_TYPE_CGI_BIN   1
@@ -9,6 +9,7 @@
 #define RESOURCE_TYPE_JPG       5
 #define RESOURCE_TYPE_UNKNOWN   6
 
+/* Response codes */
 #define HTTP_200                10
 #define HTTP_404                11
 

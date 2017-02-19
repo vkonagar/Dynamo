@@ -1,3 +1,10 @@
+/*
+ * Dynamic library loader and unloader for high performance server.
+ *
+ * Author: Vamshi Redy Konagari
+ * Email: vkonagar@andrew.cmu.edu
+ * Date: 2/19/2017
+ */
 #include "dynlib.h"
 #include <stdio.h>
 #include <stdlib.h>

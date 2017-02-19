@@ -6,10 +6,14 @@
  * 1. Implements HTTP/1.0 GET requests for static and dynamic content.
  * 2. Assumes one connection per request (no persistent connections).
  * 3. Uses worker threads with dynamic loading of (.so) to achieve faster dynamic
-	content generation.
+	content generation. Only ELF compatible modules are supported.
  * 4. Serves HTML (.html), image (.gif and .jpg), and text (.txt) files.
  * 5. Accepts a single command-line argument: the port to listen on.
  * 6. Implements concurrency using IO Multiplexing and worker threads.
+ *
+ * Author: Vamshi Reddy Konagari
+ * Email: vkonagar@andrew.cmu.edu
+ * Date: 2/19/2017
  */
 #include <stdio.h>
 #include <netinet/in.h>
@@ -29,105 +33,23 @@
 #include "dynlib.h"
 #include <dlfcn.h>
 
-#define DEFAULT_LISTEN_PORT         80
+#define DEFAULT_LISTEN_PORT         80      /* Server's port */
 #define MAX_LISTEN_QUEUE            100000  /* Avoids connection resets */
 #define MAX_FD_LIMIT                100000
 #define MAX_EPOLL_EVENTS            100000  /* Determines how many outstanding
                                               events in the system that can
-                                              be delivered */
+                                              be delivered. Set this to around
+                                              max connections that can be
+                                              outstanding in the server */
 #define WORKER_THREAD_COUNT         3       /* Tune this parameter according
-                                               to number of cores in the
+                                               to number of cores in your
                                                system */
-void* static_content_worker_thread(void* arg);
 
-void handle_client_request(int epollfd, epoll_conn_state* con)
-{
-    /* Create the header */
-    http_header_t header;
-    init_header(&header);
-    http_scan_header(con->client_fd, &header);
-
-    request_item* reqitem;
-    char resource_name[MAX_RESOURCE_NAME_LENGTH];
-
-    switch (get_resource_type(header.request_url, resource_name))
-    {
-        case RESOURCE_TYPE_CGI_BIN:
-                    reqitem = create_dynamic_request_item(resource_name);
-                    int worker_fd = send_to_worker_thread(reqitem);
-                    Free(reqitem);
-                    con->worker_fd = worker_fd;
-                    make_socket_non_blocking(worker_fd);
-                    add_worker_fd_to_epoll(epollfd, worker_fd, con);
-                    break;
-        case RESOURCE_TYPE_UNKNOWN:
-                    dbg_printf("Unknown\n");
-                    break;
-        default:    /* Handle static */
-                    dbg_printf("Resource name %s\n", resource_name);
-                    create_static_worker(con->client_fd, static_content_worker_thread,
-                                        resource_name);
-                    Free(con);
-                    break;
-    }
-    /* Free the header */
-    free_kvpairs_in_header(&header);
-}
-
-int handle_client_response(int epollfd, epoll_conn_state* con)
-{
-    char buf[MAX_READ_LENGTH];
-    int read_count = 0;
-    while ((read_count = read(con->worker_fd, buf, MAX_READ_LENGTH)) > 0)
-    {
-        dbg_printf("Read %d\n", read_count);
-        int a = rio_writen(con->client_fd, buf, read_count);
-        dbg_printf("Written %d\n", a);
-    }
-    if (read_count == -1 && errno != EAGAIN)
-    {
-        perror("Error in handle_client_response");
-        exit(EXIT_FAILURE);
-    }
-    else if(read_count == 0)
-    {
-        dbg_printf("Phew! Read all the data.. \n");
-        return RESPONSE_HANDLING_COMPLETE;
-    }
-    else if(read_count == -1 && errno == EAGAIN)
-    {
-        dbg_printf("Not complete.. will try again\n");
-    }
-    return RESPONSE_HANDLING_PARTIAL;
-}
-
-void* dynamic_content_worker_thread(void* arg)
-{
-    /* This thread is independent, its resources like stack, etc should
-     * be freed automatically. */
-    if (pthread_detach(pthread_self()) == -1)
-    {
-        perror("Thread cannot be detached");
-        return (void*)-1;
-    }
-
-    int server_sock = create_listen_tcp_socket(WORKER_THREAD_PORT, MAX_LISTEN_QUEUE,
-                                            SHARED_SOCKET);
-    /* Sequential server */
-    request_item item;
-    while (1)
-    {
-        int client_fd = accept(server_sock, NULL, NULL);
-        if (client_fd == -1)
-            continue;
-        /* Read the request from the master */
-        int r = read(client_fd, &item, sizeof(request_item));
-        handle_dynamic_exec_lib(client_fd, item.resource_name);
-        Close(client_fd);
-    }
-    return 0;
-}
-
+/*
+ * This is a thread function to serve static content like images, text, html.
+ * Upon a request for static content, a thread is spawned with this function
+ * to server the request. It uses sendfile to avoid overhead of kernel->user
+ * copying. */
 void* static_content_worker_thread(void* arg)
 {
     request_item* item = (request_item*)arg;
@@ -144,6 +66,116 @@ void* static_content_worker_thread(void* arg)
     return 0;
 }
 
+/* This is a client request handler.
+ * @param epollfd IO multiplexed fd.
+ * @param con connection state of the client's connection in epoll.
+ * */
+void handle_client_request(int epollfd, epoll_conn_state* con)
+{
+    /* Scan the header */
+    http_header_t header;
+    init_header(&header);
+    http_scan_header(con->client_fd, &header);
+
+    request_item* reqitem;
+    char resource_name[MAX_RESOURCE_NAME_LENGTH]; /* ex: cmu.jpg, etc */
+
+    switch (get_resource_type(header.request_url, resource_name))
+    {
+        case RESOURCE_TYPE_CGI_BIN:
+                    reqitem = create_dynamic_request_item(resource_name);
+                    /* Dynamic requests are handled by worker threads */
+                    int worker_fd = send_to_worker_thread(reqitem);
+                    Free(reqitem);
+                    /* Store the assigned worker to the client connection's
+                     * epoll state */
+                    con->worker_fd = worker_fd;
+                    make_socket_non_blocking(worker_fd);
+                    add_worker_fd_to_epoll(epollfd, worker_fd, con);
+                    break;
+        case RESOURCE_TYPE_UNKNOWN:
+                    dbg_printf("Unknown %s\n", header.request_url);
+                    break;
+        default:    /* Handle static
+                     * A worker is created for this request */
+                    create_static_worker(con->client_fd,
+                                        static_content_worker_thread,
+                                        resource_name);
+                    Free(con);
+                    break;
+    }
+    /* Free the header */
+    free_kvpairs_in_header(&header);
+}
+
+/*
+ * Handle the response from the worker thread and send it back to the client.
+ * It is invoked for dynamic requests after the worker thread finishes
+ * generating the dynamic content */
+int handle_client_response(int epollfd, epoll_conn_state* con)
+{
+    /* read the generated content and write back to the client */
+    char buf[MAX_READ_LENGTH];
+    int read_count = 0;
+    while ((read_count = read(con->worker_fd, buf, MAX_READ_LENGTH)) > 0)
+    {
+        int a = rio_writen(con->client_fd, buf, read_count);
+    }
+    if (read_count == -1 && errno != EAGAIN)
+    {
+        perror("Error in handle_client_response");
+        exit(EXIT_FAILURE);
+    }
+    else if(read_count == 0)
+    {
+        /* When all of the data from the socket is read */
+        dbg_printf("Phew! Done reading all the data.. \n");
+        return RESPONSE_HANDLING_COMPLETE;
+    }
+    else if(read_count == -1 && errno == EAGAIN)
+    {
+        /* Non blocking err */
+        dbg_printf("Not complete.. will try again\n");
+    }
+    return RESPONSE_HANDLING_PARTIAL;
+}
+
+
+/*
+ * This function is invoked on a worker thread to serve dynamic content.
+ * It has a internal TCP server to which master connects and passes the requests
+ * This generates the required dynamic content and writes
+ * the data back to the master's socket
+ */
+void* dynamic_content_worker_thread(void* arg)
+{
+    /* This thread is independent, its resources like stack, etc should
+     * be freed automatically. */
+    if (pthread_detach(pthread_self()) == -1)
+    {
+        perror("Thread cannot be detached");
+        return (void*)-1;
+    }
+
+    /* TCP server to which master sends requests */
+    int server_sock = create_listen_tcp_socket(WORKER_THREAD_PORT,
+                                            MAX_LISTEN_QUEUE, SHARED_SOCKET);
+    /* Sequential server */
+    request_item item;
+    while (1)
+    {
+        int client_fd = accept(server_sock, NULL, NULL);
+        if (client_fd == -1)
+            continue;
+        /* Read the request from the master */
+        int r = read(client_fd, &item, sizeof(request_item));
+        /* Load the module and generate the content */
+        handle_dynamic_exec_lib(client_fd, item.resource_name);
+        Close(client_fd);
+    }
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     increase_fd_limit(MAX_FD_LIMIT);
@@ -156,15 +188,16 @@ int main(int argc, char *argv[])
     }
 
     /* Create a new server socket */
-    int server_sock = create_listen_tcp_socket(port, MAX_LISTEN_QUEUE, NON_SHARED_SOCKET);
+    int server_sock = create_listen_tcp_socket(port, MAX_LISTEN_QUEUE,
+                                                    NON_SHARED_SOCKET);
     make_socket_non_blocking(server_sock);
 
-    /* Create worker threads */
+    /* Create dynamic content generation workers */
     create_threads(WORKER_THREAD_COUNT, dynamic_content_worker_thread);
 
-    /* Initialize stat mutex */
+    /* Initialize stat mutex for statistics thread */
     init_stat_mutexes();
-    /* Create stat thread */
+    /* Create statistics thread to print requests and replies rate*/
     create_stat_thread();
 
     /* Event polling code begins */
@@ -180,7 +213,10 @@ int main(int argc, char *argv[])
     /* Server's socket for IN events */
     memset(&listen_event, 0, sizeof(listen_event));
     listen_event.data.fd = server_sock;
-    listen_event.events = EPOLLIN | EPOLLET;
+    listen_event.events = EPOLLIN | EPOLLET; /* Edge triggered because we
+                                                want to get notified only
+                                                when a new connection is
+                                                accepted */
 
     int ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_sock, &listen_event);
     if (ret == -1)
@@ -214,6 +250,8 @@ int main(int argc, char *argv[])
             else if ((events[i].events & EPOLLIN) &&
                     (events[i].data.fd == server_sock))
             {
+                /* Server's Listening socket. Possible new conenction.
+                 * Accept all of the pending conenctions */
                 while (1)
                 {
                     int cli_fd = accept(server_sock, NULL, NULL);
@@ -227,7 +265,7 @@ int main(int argc, char *argv[])
                             exit(EXIT_FAILURE);
                         }
                     }
-                    increment_request_count(); /* Global accepted conn. count */
+                    increment_request_count(); /* For stats */
                     add_client_fd_to_epoll(epoll_fd, cli_fd);
                 }
             }
@@ -238,8 +276,8 @@ int main(int argc, char *argv[])
                 {
                     /* Worker is ready with the output.
                      * Send the output to the client */
-                    dbg_printf("Event worker\n");
-                    if (handle_client_response(epoll_fd, con) == RESPONSE_HANDLING_COMPLETE)
+                    if (handle_client_response(epoll_fd, con) ==
+                                                RESPONSE_HANDLING_COMPLETE)
                     {
                         Close(con->client_fd);
                         Close(con->worker_fd);
@@ -250,7 +288,6 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
-                    dbg_printf("Sending request to worker\n");
                     /* Client's input is ready. Serve the HTTP request */
                     handle_client_request(epoll_fd, con);
                 }

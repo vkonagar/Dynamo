@@ -1,5 +1,5 @@
-#ifndef HTTP_HEADER_PROXY_H
-#define HTTP_HEADER_PROXY_H
+#ifndef __HTTP_HEADER_PROXY_H
+#define __HTTP_HEADER_PROXY_H
 
 #define MAX_URL_LENGTH                  100
 #define PORT_NUMBER_STR_MAX_LENGTH      10
@@ -69,4 +69,4 @@ void add_new_header_item(http_header_t* http_header, header_kv_pair_t* hdr);
 void free_kvpairs_in_header(http_header_t* header);
 /* Initializes the HTTP header */
 void init_header(http_header_t* header);
-#endif /* HTTP_HEADER_PROXY_H */
+#endif /* __HTTP_HEADER_PROXY_H */

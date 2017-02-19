@@ -1,8 +1,8 @@
 /* Functions to process HTTP headers.
  * Author: Vamshi Reddy Konagar (vkonagar)
  * Date: 12/5/2016
+ * Email: vkonagar@andrew.cmu.edu
  */
-
 #include "http_header.h"
 #include <stdio.h>
 #include <stdlib.h>
