@@ -138,7 +138,7 @@ int create_listen_tcp_socket(int port, int backlog, int socket_shared)
     return sfd;
 }
 
-int create_worker_threads(int no_threads, void* (*func)(void*))
+int create_threads(int no_threads, void* (*func)(void*))
 {
     int i;
     for(i=0; i<no_threads; i++)
@@ -224,4 +224,19 @@ int send_to_worker_thread(request_item* reqitem)
     int a = rio_writen(sockfd, reqitem, sizeof(request_item));
     dbg_printf("Sent ---> %d\n", a);
     return sockfd;
+}
+
+void increment_reply_count(long* count, pthread_mutex_t* replies_mutex)
+{
+    pthread_mutex_lock(replies_mutex);
+    (*count)++;
+    pthread_mutex_unlock(replies_mutex);
+}
+
+long get_reply_count(long* count, pthread_mutex_t* replies_mutex)
+{
+    pthread_mutex_lock(replies_mutex);
+    int res = (*count);
+    pthread_mutex_unlock(replies_mutex);
+    return res;
 }

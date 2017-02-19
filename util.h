@@ -2,6 +2,7 @@
 #define UTIL_H
 
 #include "http_util.h"
+#include <pthread.h>
 
 #define EVENT_OWNER_CLIENT          1
 #define EVENT_OWNER_WORKER          2
@@ -23,7 +24,6 @@
 #define SHARED_SOCKET               1
 #define NON_SHARED_SOCKET           2
 
-#define DEBUG
 #ifdef DEBUG
 #define dbg_printf(...) printf(__VA_ARGS__)
 #else
@@ -44,10 +44,12 @@ typedef struct request_item
     int client_fd; /* Required to perform sendfile directly for STATIC request type*/
 }request_item;
 
+void increment_reply_count(long* count, pthread_mutex_t* mutex);
+long get_reply_count(long* count, pthread_mutex_t* mutex);
 int parse_port_number(int argc, char* argv);
 int increase_fd_limit(int max_fd_limit);
 int make_socket_non_blocking(int fd);
-int create_worker_threads(int no_threads, void* (*func)(void*));
+int create_threads(int no_threads, void* (*func)(void*));
 request_item* create_dynamic_request_item(char* name);
 request_item* create_static_request_item(char* name, int client_fd);
 void add_worker_fd_to_epoll(int epollfd, int worker_fd, epoll_conn_state*);
