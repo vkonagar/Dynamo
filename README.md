@@ -21,6 +21,8 @@ There is also an unoptimized forking CGI server that is shipped along with Dynam
 $ sudo ./server_unopt <port>
 ```
 
+To enable debugging, comment `#define DEBUG` in util.h
+
 ### Testing
 Apache Benchmark
 ```sh

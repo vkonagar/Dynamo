@@ -1,7 +1,7 @@
-#include "http.h"
-
-#ifndef UTIL_H
+#ifndef UTIL_H  /* Guard macros */
 #define UTIL_H
+
+#include "http_util.h"
 
 #define EVENT_OWNER_CLIENT          1
 #define EVENT_OWNER_WORKER          2
@@ -24,7 +24,6 @@
 #define NON_SHARED_SOCKET           2
 
 #define DEBUG
-
 #ifdef DEBUG
 #define dbg_printf(...) printf(__VA_ARGS__)
 #else

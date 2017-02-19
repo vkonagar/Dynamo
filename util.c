@@ -10,7 +10,7 @@
 #include <sys/types.h>
 #include <sys/epoll.h>
 #include "util.h"
-#include "dynlib_cache.h"
+#include "dynlib.h"
 #include "dlfcn.h"
 #include "csapp.h"
 

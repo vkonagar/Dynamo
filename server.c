@@ -9,11 +9,11 @@
 #include <limits.h>
 #include <pthread.h>
 #include "http_header.h"
-#include "http.h"
+#include "http_util.h"
 #include "util.h"
 #include <sys/epoll.h>
 #include "csapp.h"
-#include "dynlib_cache.h"
+#include "dynlib.h"
 #include <dlfcn.h>
 
 #define DEFAULT_LISTEN_PORT         80

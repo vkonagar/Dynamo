@@ -30,5 +30,5 @@ int main(){
     }
     sprintf(string, "%s%s", string, "</h1>\n");
     sprintf(string, "%s%s", string, "</body> </html>\r\n");
-    write(2, string, strlen(string));
+    printf("%s\n", string);
 }
