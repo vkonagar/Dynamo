@@ -65,29 +65,38 @@ typedef struct request_item
     int client_fd; /* Required to perform sendfile directly for STATIC request type*/
 }request_item;
 
-void increment_reply_count();
-long get_reply_count();
-int parse_port_number(int argc, char* argv);
-int increase_fd_limit(int max_fd_limit);
-int make_socket_non_blocking(int fd);
-int create_threads(int no_threads, void* (*func)(void*));
+/* Request handling */
 request_item* create_dynamic_request_item(char* name);
 request_item* create_static_request_item(char* name, int client_fd);
-void add_worker_fd_to_epoll(int epollfd, int worker_fd, epoll_conn_state*);
-void add_client_fd_to_epoll(int epollfd, int cli_fd);
-int send_to_worker_thread(request_item* reqitem);
 void handle_static(int fd, char* resource_name);
 void handle_unknown(int fd, char* resource_name);
 void create_static_worker(int client_fd, void* (*func)(void*), char* res_name);
+
+/* Epoll */
+void add_worker_fd_to_epoll(int epollfd, int worker_fd, epoll_conn_state*);
+void add_client_fd_to_epoll(int epollfd, int cli_fd);
+int send_to_worker_thread(request_item* reqitem);
 int create_listen_tcp_socket(int port, int backlog, int socket_shared);
-void handle_dynamic_exec_lib(int client_fd, char* resource_name);
+
+/* Misc */
+int create_threads(int no_threads, void* (*func)(void*));
 void init_stat_mutexes();
+int parse_port_number(int argc, char* argv);
+int increase_fd_limit(int max_fd_limit);
+int make_socket_non_blocking(int fd);
 void increment_request_count();
+void increment_reply_count();
+long get_reply_count();
 long get_request_count();
 void create_stat_thread();
+
+/* Locking */
 void Pthread_rwlock_rdlock(pthread_rwlock_t* lock);
 void Pthread_rwlock_wrlock(pthread_rwlock_t* lock);
 void Pthread_rwlock_unlock(pthread_rwlock_t* lock);
+
+/* Dynamic library */
+void handle_dynamic_exec_lib(int client_fd, char* resource_name);
 void* load_dyn_library(char* library_name);
 void init_library();
 #endif

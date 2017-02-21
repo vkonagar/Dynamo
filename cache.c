@@ -26,15 +26,13 @@
 #include <unistd.h>
 #include "csapp.h"
 
-
 void display_cache(cache_t* cache)
 {
     cache_entry_t* temp = cache->head;
     printf("--------START-----\n");
     while(temp)
     {
-        printf("%s:%p:%d\n", temp->data->key.key_data, temp->data->value.value_data,
-                    temp->timestamp);
+        printf("%s:%p\n", temp->data->key.key_data, temp->data->value.value_data);
         temp = temp->next;
     }
     printf("--------END------\n");
@@ -77,7 +75,7 @@ cache_entry_t* get_new_cache_entry()
  */
 cache_t* get_new_cache()
 {
-    printf("Initializing Code Cache with %d bytes\n", MAX_CACHE_SIZE);
+    printf("Cache with maximum %d bytes\n", MAX_CACHE_SIZE);
     cache_t* cache = (cache_t*) Malloc(sizeof(cache_t));
     cache->total_size = 0;
     cache->head = NULL;

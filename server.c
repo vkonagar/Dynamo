@@ -59,6 +59,7 @@ void* static_content_worker_thread(void* arg)
         return (void*)-1;
     }
     handle_static(item->client_fd, item->resource_name);
+    increment_reply_count();
     Close(item->client_fd);
     free(item);
     return 0;

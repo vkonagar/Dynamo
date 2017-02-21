@@ -21,7 +21,7 @@
 
 typedef struct cache_key
 {
-    char key_data[MAX_KEY_LENGTH]; /* Name of the library file */
+    char key_data[MAX_KEY_LENGTH];
 }cache_key_t;
 
 typedef struct cache_value
@@ -43,7 +43,9 @@ typedef struct cache_entry
     cache_data_item_t* data;
     pthread_rwlock_t lock;
     int data_size;
-    void (*delete_callback)(cache_data_item_t*);
+    void (*delete_callback)(cache_data_item_t*); /* This is called when the
+                                                    item is evicted from the
+                                                    cache */
     struct timeval timestamp;
     struct cache_entry* next;
     struct cache_entry* prev;
