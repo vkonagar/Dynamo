@@ -73,7 +73,13 @@ void* load_dyn_library(char* library_name)
         strcpy(entry->data->key.key_data, library_name);
         entry->data->value.value_data = handle;
         entry->delete_callback = library_eviction_callback;
-        entry->data_size = 100;
+	struct stat st;
+	if (stat(library_name, &st) == -1)
+        {
+	    perror("stat");
+	}
+	entry->data_size = st.st_size;
+	printf("Stat size is %ld \n", entry->data_size);
         if (add_to_cache(cache, entry) == CACHE_INSERT_ERR)
         {
             Free(entry->data);

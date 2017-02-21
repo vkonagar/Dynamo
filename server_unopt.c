@@ -144,7 +144,7 @@ int main(int argc, char *argv[])
     }
 
     /* Initialize stat mutex */
-    init_stat_mutexes();
+    init_library();
     /* Create stat thread */
     create_stat_thread();
 
