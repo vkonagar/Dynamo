@@ -25,6 +25,7 @@
 static long request_cnt = 0;
 static long reply_cnt = 0;
 static pthread_mutex_t replycnt_mutex;
+static pthread_mutex_t dynamic_lib_mutex;
 static cache_t* cache;
 
 /* Creates a worker for static request */
@@ -37,6 +38,7 @@ void create_static_worker(int client_fd, void* (*func)(void*), char* res_name)
 
 void library_eviction_callback(cache_data_item_t* item)
 {
+    printf("Unloading library %s\n", item->key.key_data);
     if (dlclose(item->value.value_data) < 0)
     {
         fprintf(stderr, "%s\n", dlerror());
@@ -49,6 +51,7 @@ void* load_dyn_library(char* library_name)
     void (*execute)(int fd, char* args[], int count);
     char* error;
 
+    #ifdef CACHING_ENABLED
     /* Dynamically load the library */
     /* Check if the library is already loaded. If it is */
     cache_key_t key;
@@ -56,16 +59,18 @@ void* load_dyn_library(char* library_name)
     cache_data_item_t* item = get_cached_data(cache, &key);
     if (item == NULL)
     {
-        /* Library not present. */
+    #endif
         handle = dlopen(library_name, RTLD_LAZY);
         if (!handle)
         {
             fprintf(stderr, "%s\n", dlerror());
             return NULL;
         }
+    #ifdef CACHING_ENABLED
         /* Add it to cache */
         cache_entry_t* entry = get_new_cache_entry();
         entry->data = malloc(sizeof(cache_data_item_t));
+        strcpy(entry->data->key.key_data, library_name);
         entry->data->value.value_data = handle;
         entry->delete_callback = library_eviction_callback;
         entry->data_size = 100;
@@ -75,6 +80,11 @@ void* load_dyn_library(char* library_name)
             Free(entry);
         }
     }
+    else
+    {
+        handle = item->value.value_data;
+    }
+    #endif
     return handle;
 }
 
@@ -84,9 +94,17 @@ void handle_dynamic_exec_lib(int client_fd, char* resource_name)
     int path_len = MAX_DLL_NAME_LENGTH + strlen(CGIBIN_DIR_NAME) + MAX_PATH_CHARS;
     char lib_path[path_len];
     snprintf(lib_path, path_len, "./%s/%s.so", CGIBIN_DIR_NAME, resource_name);
+
+    #ifdef CACHING_ENABLED
+    pthread_mutex_lock(&dynamic_lib_mutex);
+    #endif
+
     void* handle = load_dyn_library(lib_path);
     if (handle == NULL)
     {
+        #ifdef CACHING_ENABLED
+        pthread_mutex_unlock(&dynamic_lib_mutex);
+        #endif
         http_write_response_header(client_fd, HTTP_404);
     }
     else
@@ -94,6 +112,14 @@ void handle_dynamic_exec_lib(int client_fd, char* resource_name)
         /* Success */
         void (*func)(int) = dlsym(handle, "cgi_function");
         func(client_fd);
+        #ifdef CACHING_ENABLED
+        pthread_mutex_unlock(&dynamic_lib_mutex);
+        #else
+        if (dlclose(handle) < 0)
+        {
+            fprintf(stderr, "%s\n", dlerror());
+        }
+        #endif
     }
 }
 
@@ -317,13 +343,21 @@ void increment_request_count()
     request_cnt++;
 }
 
-void init_stat_mutexes()
+void init_library()
 {
     if (pthread_mutex_init(&replycnt_mutex, NULL) != 0)
     {
         perror("mutex init");
         exit(EXIT_FAILURE);
     }
+#ifdef CACHING_ENABLED
+    if (pthread_mutex_init(&dynamic_lib_mutex, NULL) != 0)
+    {
+        perror("mutex init");
+        exit(EXIT_FAILURE);
+    }
+    cache = get_new_cache();
+#endif
 }
 
 /* This presents the connection rate and other server performance metrics
@@ -387,9 +421,4 @@ void Pthread_rwlock_unlock(pthread_rwlock_t* lock)
         printf("Error unlocking rdwr lock\n");
         exit(EXIT_FAILURE);
     }
-}
-
-void init_cache()
-{
-    cache = get_new_cache();
 }

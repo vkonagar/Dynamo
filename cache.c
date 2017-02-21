@@ -33,7 +33,7 @@ void display_cache(cache_t* cache)
     printf("--------START-----\n");
     while(temp)
     {
-        printf("%s:%d:%d\n", temp->data->key.key_data, temp->data->value.value_data,
+        printf("%s:%p:%d\n", temp->data->key.key_data, temp->data->value.value_data,
                     temp->timestamp);
         temp = temp->next;
     }
@@ -67,6 +67,7 @@ cache_entry_t* get_new_cache_entry()
  */
 cache_t* get_new_cache()
 {
+    printf("Initializing Code Cache with %d bytes\n", MAX_CACHE_SIZE);
     cache_t* cache = (cache_t*) Malloc(sizeof(cache_t));
     cache->total_size = 0;
     cache->head = NULL;
@@ -103,10 +104,8 @@ void free_cache_entry(cache_entry_t* entry)
  * */
 int add_to_cache(cache_t* cache, cache_entry_t* entry)
 {
-    display_cache(cache);
     /* Lock the cache */
     Pthread_rwlock_wrlock(&cache->lock);
-
     /* Keep deleting the old objects until this object fits in the cache */
     while ((cache->total_size + entry->data_size) > MAX_CACHE_SIZE)
     {
@@ -153,7 +152,6 @@ int add_to_cache(cache_t* cache, cache_entry_t* entry)
  * */
 int delete_lru_entry(cache_t* cache)
 {
-    display_cache(cache);
     cache_entry_t* temp = cache->head;
     cache_entry_t* lru_entry = NULL;
     struct timeval current_time, lru_ts;

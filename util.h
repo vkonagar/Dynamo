@@ -87,4 +87,5 @@ void Pthread_rwlock_rdlock(pthread_rwlock_t* lock);
 void Pthread_rwlock_wrlock(pthread_rwlock_t* lock);
 void Pthread_rwlock_unlock(pthread_rwlock_t* lock);
 void* load_dyn_library(char* library_name);
+void init_library();
 #endif

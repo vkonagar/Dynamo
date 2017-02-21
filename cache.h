@@ -12,17 +12,16 @@
 #include "util.h"
 
 /* Recommended max cache and object sizes */
-#define MAX_CACHE_SIZE 100
-
-#define CACHE_INSERT_ERR -3
-#define CACHE_DELETE_ERR -4
-#define CACHE_INSERT_SUCCESS 0
-#define CACHE_DELETE_SUCCESS 0
-
+#define MAX_CACHE_SIZE          (10 * 1024 * 1024) /* 10 Mb */
+#define CACHE_INSERT_ERR        -3
+#define CACHE_DELETE_ERR        -4
+#define CACHE_INSERT_SUCCESS    0
+#define CACHE_DELETE_SUCCESS    0
+#define MAX_KEY_LENGTH          1000
 
 typedef struct cache_key
 {
-    char key_data[MAX_DLL_NAME_LENGTH]; /* Name of the library file */
+    char key_data[MAX_KEY_LENGTH]; /* Name of the library file */
 }cache_key_t;
 
 typedef struct cache_value
@@ -53,8 +52,8 @@ typedef struct cache_entry
 typedef struct cache
 {
     pthread_rwlock_t lock;
-    long total_size; /* total size of the cache in bytes */
     cache_entry_t* head;
+    int total_size;
 }cache_t;
 
 /* Create cache structures */

@@ -40,11 +40,9 @@
                                               be delivered. Set this to around
                                               max connections that can be
                                               outstanding in the server */
-#define WORKER_THREAD_COUNT         3       /* Tune this parameter according
+#define WORKER_THREAD_COUNT         4       /* Tune this parameter according
                                                to number of cores in your
                                                system */
-
-
 /*
  * This is a thread function to serve static content like images, text, html.
  * Upon a request for static content, a thread is spawned with this function
@@ -178,6 +176,9 @@ void* dynamic_content_worker_thread(void* arg)
 
 int main(int argc, char *argv[])
 {
+    /* Init cache */
+    init_library();
+
     increase_fd_limit(MAX_FD_LIMIT);
     signal(SIGPIPE, SIG_IGN); /* Ignore Sigpipe */
     int port = parse_port_number(argc, argv[1]);
@@ -195,8 +196,6 @@ int main(int argc, char *argv[])
     /* Create dynamic content generation workers */
     create_threads(WORKER_THREAD_COUNT, dynamic_content_worker_thread);
 
-    /* Initialize stat mutex for statistics thread */
-    init_stat_mutexes();
     /* Create statistics thread to print requests and replies rate*/
     create_stat_thread();
 
