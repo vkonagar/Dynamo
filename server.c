@@ -250,6 +250,7 @@ int main(int argc, char *argv[])
                                                         con->worker_fd, NULL);
                                                 Free(con->client_con);
                                                 Close(con->worker_fd);
+                                                Free(con);
                                                 break;
                     case EVENT_OWNER_CLIENT:    /* Will be cleaned by worker */
                                                 break;
