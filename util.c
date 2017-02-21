@@ -25,7 +25,6 @@
 static long request_cnt = 0;
 static long reply_cnt = 0;
 static pthread_mutex_t replycnt_mutex;
-static pthread_mutex_t dynamic_lib_mutex;
 static cache_t* cache;
 
 /* Creates a worker for static request */
@@ -55,49 +54,14 @@ void unload_dyn_library(void* handle)
 
 void* load_dyn_library(char* library_name)
 {
-    void* handle;
     void (*execute)(int fd, char* args[], int count);
     char* error;
-
-    #ifdef CACHING_ENABLED
-    /* Dynamically load the library */
-    /* Check if the library is already loaded. If it is */
-    cache_key_t key;
-    strcpy(key.key_data, library_name);
-    cache_data_item_t* item = get_cached_data(cache, &key);
-    if (item == NULL)
+    void* handle = dlopen(library_name, RTLD_LAZY);
+    if (!handle)
     {
-    #endif
-        handle = dlopen(library_name, RTLD_LAZY);
-        if (!handle)
-        {
-            fprintf(stderr, "%s\n", dlerror());
-            return NULL;
-        }
-    #ifdef CACHING_ENABLED
-        /* Add it to cache */
-        cache_entry_t* entry = get_new_cache_entry();
-        entry->data = malloc(sizeof(cache_data_item_t));
-        strcpy(entry->data->key.key_data, library_name);
-        entry->data->value.value_data = handle;
-        entry->delete_callback = library_eviction_callback;
-        struct stat st;
-        if (stat(library_name, &st) == -1)
-        {
-            perror("stat");
-        }
-        entry->data_size = st.st_size;
-        if (add_to_cache(cache, entry) == CACHE_INSERT_ERR)
-        {
-            Free(entry->data);
-            Free(entry);
-        }
+        fprintf(stderr, "%s\n", dlerror());
+        return NULL;
     }
-    else
-    {
-        handle = item->value.value_data;
-    }
-    #endif
     return handle;
 }
 
@@ -108,29 +72,51 @@ void handle_dynamic_exec_lib(int client_fd, char* resource_name)
     char lib_path[path_len];
     snprintf(lib_path, path_len, "./%s/%s.so", CGIBIN_DIR_NAME, resource_name);
 
-    #ifdef CACHING_ENABLED
-    pthread_mutex_lock(&dynamic_lib_mutex);
-    #endif
-
-    void* handle = load_dyn_library(lib_path);
-    if (handle == NULL)
+    /* Get from cache */
+    cache_key_t key;
+    strcpy(key.key_data, lib_path);
+    cache_entry_t* entry = get_cached_item_with_lock(cache, &key); /* Read
+                                                                      lock is
+                                                                      taken */
+    if (entry == NULL)
     {
-        #ifdef CACHING_ENABLED
-        pthread_mutex_unlock(&dynamic_lib_mutex);
-        #endif
-        http_write_response_header(client_fd, HTTP_404);
+        dbg_printf("Cache miss\n");
+        /* Cache miss */
+        void* handle = load_dyn_library(lib_path);
+        if (handle == NULL)
+        {
+            http_write_response_header(client_fd, HTTP_404);
+            return;
+        }
+        /* Add it to cache */
+        dbg_printf("Creating a new cache entry\n");
+        entry = get_new_cache_entry();
+        entry->data = malloc(sizeof(cache_data_item_t));
+        entry->data->key = key;
+        entry->data->value.value_data = handle;
+        entry->delete_callback = library_eviction_callback;
+        struct stat st;
+        if (stat(lib_path, &st) == -1)
+        {
+            perror("stat");
+            st.st_size = 1024; /* avg size of a code */
+        }
+        entry->data_size = st.st_size;
+        Pthread_rwlock_rdlock(&entry->lock);
+        if (add_to_cache(cache, entry) == CACHE_INSERT_ERR)
+        {
+            printf("Cannot insert into cache\n");
+            Free(entry->data);
+            Free(entry);
+        }
     }
-    else
-    {
-        /* Success */
-        void (*func)(int) = dlsym(handle, "cgi_function");
-        func(client_fd);
-        #ifdef CACHING_ENABLED
-        pthread_mutex_unlock(&dynamic_lib_mutex);
-        #else
-        unload_dyn_library(handle);
-        #endif
-    }
+    dbg_printf("Cache hit\n");
+    void* handle = entry->data->value.value_data;
+    /* Success */
+    void (*func)(int) = dlsym(handle, "cgi_function");
+    http_write_response_header(client_fd, HTTP_200);
+    func(client_fd);
+    Pthread_rwlock_unlock(&entry->lock); /* Now free for anyone to evict this */
 }
 
 /* Handler for static request type (html, txt, jpg, etc) */
@@ -319,6 +305,7 @@ int send_to_worker_thread(request_item* reqitem)
     if (connect(sockfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) == -1)
     {
         perror("Connect to worker thread");
+        return -1;
     }
     int a = rio_writen(sockfd, reqitem, sizeof(request_item));
     return sockfd;
@@ -469,14 +456,7 @@ void init_library()
         perror("mutex init");
         exit(EXIT_FAILURE);
     }
-#ifdef CACHING_ENABLED
-    if (pthread_mutex_init(&dynamic_lib_mutex, NULL) != 0)
-    {
-        perror("mutex init");
-        exit(EXIT_FAILURE);
-    }
     cache = get_new_cache();
     /* Start up cache invalidation thread */
     create_threads(1, cache_invalidation_thread);
-#endif
 }

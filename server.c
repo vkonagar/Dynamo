@@ -40,7 +40,7 @@
                                               be delivered. Set this to around
                                               max connections that can be
                                               outstanding in the server */
-#define WORKER_THREAD_COUNT         4       /* Tune this parameter according
+#define WORKER_THREAD_COUNT         3       /* Tune this parameter according
                                                to number of cores in your
                                                system */
 /*
@@ -85,6 +85,12 @@ void handle_client_request(int epollfd, epoll_conn_state* con)
                     /* Dynamic requests are handled by worker threads */
                     int worker_fd = send_to_worker_thread(reqitem);
                     Free(reqitem);
+                    if (worker_fd == -1)
+                    {
+                        /* Close client's connection. */
+                        close(con->client_fd);
+                        break;
+                    }
                     /* Store the assigned worker to the client connection's
                      * epoll state */
                     con->worker_fd = worker_fd;

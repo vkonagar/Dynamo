@@ -37,6 +37,7 @@
 
 #define SERVER_REQUIRED_CMD_ARG_COUNT 2
 
+//#define DEBUG
 #ifdef DEBUG
 #define dbg_printf(...) printf(__VA_ARGS__)
 #else

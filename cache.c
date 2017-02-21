@@ -114,9 +114,10 @@ void free_cache_entry(cache_entry_t* entry)
  * */
 int add_to_cache(cache_t* cache, cache_entry_t* entry)
 {
-    /* Lock the cache */
+    /* Lock the entire cache. We don't want anyone to be reading while we
+     * change the state of the cache pointers */
     Pthread_rwlock_wrlock(&cache->lock);
-    /* Keep deleting the old objects until this object fits in the cache */
+    /* Keep deleting old objects until this object fits in the cache */
     while ((cache->total_size + entry->data_size) > MAX_CACHE_SIZE)
     {
         /* If the cache doesn't have any entry and can't fit this item
@@ -129,6 +130,7 @@ int add_to_cache(cache_t* cache, cache_entry_t* entry)
         delete_lru_entry(cache);
     }
 
+    /* Update the latest timestamp on the added entry */
     if (gettimeofday(&entry->timestamp, NULL) == -1)
     {
         perror("gettimeofday");
@@ -200,6 +202,14 @@ int delete_lru_entry(cache_t* cache)
         return CACHE_DELETE_ERR;
     }
 
+    /* Wait if someone else is using this entry. Possiblity that some thread
+     * might cache this entry and be using. We can't delete until it releases
+     * its read lock */
+    Pthread_rwlock_wrlock(&lru_entry->lock);
+    /* We don't need to acquire prev and next nodes's write locks as we
+     * are assuming that traversals can only happen when the global cache is
+     * read locked and it won't happen while this is executing */
+
     if (lru_entry->prev == NULL && lru_entry->next == NULL)
     {
         cache->head = NULL;
@@ -228,34 +238,35 @@ int delete_lru_entry(cache_t* cache)
 }
 
 
-/* Gets the cached data for the given host_name, port, url
- * updates the cached_data_len to the length of the data buffer returned.
- * @return pointer to the data buffer
+/* Gets the cached data for the given key. It also read locks the returned item.
+ * @return cached entry
  */
-cache_data_item_t* get_cached_data(cache_t* cache, cache_key_t* key)
+cache_entry_t* get_cached_item_with_lock(cache_t* cache, cache_key_t* key)
 {
     /* Take read lock on the cache. Multiple readers can take the data
      * from the cache. */
     Pthread_rwlock_rdlock(&cache->lock);
     cache_entry_t* temp = cache->head;
-    cache_data_item_t* result = NULL;
+    cache_entry_t* result = NULL;
     while(temp)
     {
         if ((strcmp(temp->data->key.key_data, key->key_data) == 0))
         {
-            /* If entry is found, grab a write lock to update the timestamp */
+            /** Critical Section for updating the timestamp */
             Pthread_rwlock_wrlock(&temp->lock);
-            /* Copy the data to a new buffer and return it to the client */
             if (gettimeofday(&temp->timestamp, NULL) == -1)
             {
+                perror("gettimeofdat in get");
                 Pthread_rwlock_unlock(&temp->lock);
                 Pthread_rwlock_unlock(&cache->lock);
-                printf("Cannot get the time \n");
                 return NULL;
             }
-            result = temp->data;
-            /* Unlock the write lock */
             Pthread_rwlock_unlock(&temp->lock);
+            /** End of CS */
+
+            /* Fetch read lock for the caller to use this item */
+            Pthread_rwlock_rdlock(&temp->lock);
+            result = temp;
             break;
         }
         temp = temp->next;

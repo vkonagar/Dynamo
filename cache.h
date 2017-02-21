@@ -65,7 +65,7 @@ int add_to_cache(cache_t* cache, cache_entry_t* entry);
 int delete_lru_entry(cache_t* cache);
 void free_cache_entry(cache_entry_t* entry);
 
-cache_data_item_t* get_cached_data(cache_t* cache, cache_key_t* key);
+cache_entry_t* get_cached_item_with_lock(cache_t* cache, cache_key_t* key);
 void display_cache();
 
 void get_global_cache_wrlock(cache_t* cache);
