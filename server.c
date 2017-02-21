@@ -125,6 +125,8 @@ int handle_client_response(int epollfd, epoll_conn_state* con)
     while ((read_count = read(con->worker_fd, buf, MAX_READ_LENGTH)) > 0)
     {
         int a = rio_writen(con->client_fd, buf, read_count);
+        if (a == -1)
+            return -1;
     }
     if (read_count == -1 && errno != EAGAIN)
     {
@@ -244,12 +246,17 @@ int main(int argc, char *argv[])
                 epoll_conn_state* con = events[i].data.ptr;
                 switch(con->type)
                 {
-                    case EVENT_OWNER_WORKER:    Close(con->worker_fd);
-                                                /* Fall through */
-                    case EVENT_OWNER_CLIENT:    Close(con->client_fd);
-                                                Free(con);
+                    case EVENT_OWNER_WORKER:    epoll_ctl(epoll_fd, EPOLL_CTL_DEL,
+                                                        con->worker_fd, NULL);
+                                                Free(con->client_con);
+                                                Close(con->worker_fd);
                                                 break;
-                    default:                    Close(events[i].data.fd);
+                    case EVENT_OWNER_CLIENT:    /* Will be cleaned by worker */
+                                                break;
+                    default:                    if (events[i].data.fd == server_sock)
+                                                {
+                                                    Close(events[i].data.fd);
+                                                }
                 }
             }
             else if ((events[i].events & EPOLLIN) &&
@@ -281,17 +288,20 @@ int main(int argc, char *argv[])
                 {
                     /* Worker is ready with the output.
                      * Send the output to the client */
-                    if (handle_client_response(epoll_fd, con) ==
-                                                RESPONSE_HANDLING_COMPLETE)
+                    int ret = handle_client_response(epoll_fd, con);
+                    if (ret == RESPONSE_HANDLING_COMPLETE || ret == -1)
                     {
+                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, con->client_fd, NULL);
                         Close(con->client_fd);
+                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, con->worker_fd, NULL);
                         Close(con->worker_fd);
                         Free(con->client_con);
                         Free(con);
-                        increment_reply_count();
+                        if (ret == RESPONSE_HANDLING_COMPLETE)
+                            increment_reply_count();
                     }
                 }
-                else
+                else if(con->type == EVENT_OWNER_CLIENT)
                 {
                     /* Client's input is ready. Serve the HTTP request */
                     handle_client_request(epoll_fd, con);
