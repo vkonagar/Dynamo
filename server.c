@@ -176,7 +176,6 @@ void* dynamic_content_worker_thread(void* arg)
 
 int main(int argc, char *argv[])
 {
-    /* Init cache */
     init_library();
 
     increase_fd_limit(MAX_FD_LIMIT);

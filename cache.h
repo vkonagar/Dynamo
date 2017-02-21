@@ -67,4 +67,7 @@ void free_cache_entry(cache_entry_t* entry);
 
 cache_data_item_t* get_cached_data(cache_t* cache, cache_key_t* key);
 void display_cache();
+
+void get_global_cache_wrlock(cache_t* cache);
+void release_global_cache_wrlock(cache_t* cache);
 #endif /* End of header */

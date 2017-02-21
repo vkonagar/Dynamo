@@ -45,6 +45,14 @@ void library_eviction_callback(cache_data_item_t* item)
     }
 }
 
+void unload_dyn_library(void* handle)
+{
+    if (dlclose(handle) < 0)
+    {
+        fprintf(stderr, "%s\n", dlerror());
+    }
+}
+
 void* load_dyn_library(char* library_name)
 {
     void* handle;
@@ -73,13 +81,12 @@ void* load_dyn_library(char* library_name)
         strcpy(entry->data->key.key_data, library_name);
         entry->data->value.value_data = handle;
         entry->delete_callback = library_eviction_callback;
-	struct stat st;
-	if (stat(library_name, &st) == -1)
+        struct stat st;
+        if (stat(library_name, &st) == -1)
         {
-	    perror("stat");
-	}
-	entry->data_size = st.st_size;
-	printf("Stat size is %ld \n", entry->data_size);
+            perror("stat");
+        }
+        entry->data_size = st.st_size;
         if (add_to_cache(cache, entry) == CACHE_INSERT_ERR)
         {
             Free(entry->data);
@@ -121,10 +128,7 @@ void handle_dynamic_exec_lib(int client_fd, char* resource_name)
         #ifdef CACHING_ENABLED
         pthread_mutex_unlock(&dynamic_lib_mutex);
         #else
-        if (dlclose(handle) < 0)
-        {
-            fprintf(stderr, "%s\n", dlerror());
-        }
+        unload_dyn_library(handle);
         #endif
     }
 }
@@ -349,21 +353,49 @@ void increment_request_count()
     request_cnt++;
 }
 
-void init_library()
+void* cache_invalidation_thread(void* arg)
 {
-    if (pthread_mutex_init(&replycnt_mutex, NULL) != 0)
+    if (pthread_detach(pthread_self()) == -1)
     {
-        perror("mutex init");
-        exit(EXIT_FAILURE);
+        perror("Thread cannot be detached");
+        return (void*)-1;
     }
-#ifdef CACHING_ENABLED
-    if (pthread_mutex_init(&dynamic_lib_mutex, NULL) != 0)
+    while(1)
     {
-        perror("mutex init");
-        exit(EXIT_FAILURE);
+        printf("CACHE INVALIDATION THREAD\n");
+        get_global_cache_wrlock(cache);
+        /* Go through all the entries and check if the underlying
+         * file is changed */
+        cache_entry_t* entry = cache->head;
+        struct stat st;
+        while (entry)
+        {
+            if (stat(entry->data->key.key_data, &st) == -1)
+            {
+                perror("Stat");
+                printf("Library is no longer present. Cannot update..Using stale version");
+            }
+            /* Assumption: If the file size is changed, then probably it is modified.
+             * There are cases when its modified and file size doesn't change.
+             * Need to improve using last modified timestamps */
+            if (entry->data_size != st.st_size)
+            {
+                printf("CACHE INVALIDATION THREAD: Refreshed %s\n", entry->data->key.key_data);
+                /* Needs sync */
+                unload_dyn_library(entry->data->value.value_data);
+                void* handle = dlopen(entry->data->key.key_data, RTLD_LAZY);
+                if (!handle)
+                {
+                    fprintf(stderr, "%s\n", dlerror());
+                }
+                entry->data->value.value_data = handle;
+                entry->data_size = st.st_size;
+            }
+            entry = entry->next;
+        }
+        release_global_cache_wrlock(cache);
+        sleep(CACHE_INVALIDATION_TIMEOUT);
     }
-    cache = get_new_cache();
-#endif
 }
 
 /* This presents the connection rate and other server performance metrics
@@ -427,4 +459,24 @@ void Pthread_rwlock_unlock(pthread_rwlock_t* lock)
         printf("Error unlocking rdwr lock\n");
         exit(EXIT_FAILURE);
     }
+}
+
+
+void init_library()
+{
+    if (pthread_mutex_init(&replycnt_mutex, NULL) != 0)
+    {
+        perror("mutex init");
+        exit(EXIT_FAILURE);
+    }
+#ifdef CACHING_ENABLED
+    if (pthread_mutex_init(&dynamic_lib_mutex, NULL) != 0)
+    {
+        perror("mutex init");
+        exit(EXIT_FAILURE);
+    }
+    cache = get_new_cache();
+    /* Start up cache invalidation thread */
+    create_threads(1, cache_invalidation_thread);
+#endif
 }

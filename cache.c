@@ -40,6 +40,16 @@ void display_cache(cache_t* cache)
     printf("--------END------\n");
 }
 
+void get_global_cache_wrlock(cache_t* cache)
+{
+    Pthread_rwlock_wrlock(&cache->lock);
+}
+
+void release_global_cache_wrlock(cache_t* cache)
+{
+    Pthread_rwlock_unlock(&cache->lock);
+}
+
 /* get_new_cache_entry
  * Creates a new cache entry by allocating the memory on the heap
  * @return new cache entry's address.
