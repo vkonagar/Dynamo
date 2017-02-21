@@ -30,7 +30,6 @@
 #include "util.h"
 #include <sys/epoll.h>
 #include "csapp.h"
-#include "dynlib.h"
 #include <dlfcn.h>
 
 #define DEFAULT_LISTEN_PORT         80      /* Server's port */
@@ -44,6 +43,7 @@
 #define WORKER_THREAD_COUNT         3       /* Tune this parameter according
                                                to number of cores in your
                                                system */
+
 
 /*
  * This is a thread function to serve static content like images, text, html.

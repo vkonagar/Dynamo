@@ -17,14 +17,15 @@
 #include <sys/types.h>
 #include <sys/epoll.h>
 #include "util.h"
-#include "dynlib.h"
 #include "dlfcn.h"
 #include "csapp.h"
+#include "cache.h"
 
 /* Statistics data */
 static long request_cnt = 0;
 static long reply_cnt = 0;
 static pthread_mutex_t replycnt_mutex;
+static cache_t* cache;
 
 /* Creates a worker for static request */
 void create_static_worker(int client_fd, void* (*func)(void*), char* res_name)
@@ -32,6 +33,49 @@ void create_static_worker(int client_fd, void* (*func)(void*), char* res_name)
     pthread_t thread_id;
     request_item* item = create_static_request_item(res_name, client_fd);
     pthread_create(&thread_id, NULL, func, (void*) item);
+}
+
+void library_eviction_callback(cache_data_item_t* item)
+{
+    if (dlclose(item->value.value_data) < 0)
+    {
+        fprintf(stderr, "%s\n", dlerror());
+    }
+}
+
+void* load_dyn_library(char* library_name)
+{
+    void* handle;
+    void (*execute)(int fd, char* args[], int count);
+    char* error;
+
+    /* Dynamically load the library */
+    /* Check if the library is already loaded. If it is */
+    cache_key_t key;
+    strcpy(key.key_data, library_name);
+    cache_data_item_t* item = get_cached_data(cache, &key);
+    if (item == NULL)
+    {
+        /* Library not present. */
+        handle = dlopen(library_name, RTLD_LAZY);
+        if (!handle)
+        {
+            fprintf(stderr, "%s\n", dlerror());
+            return NULL;
+        }
+        /* Add it to cache */
+        cache_entry_t* entry = get_new_cache_entry();
+        entry->data = malloc(sizeof(cache_data_item_t));
+        entry->data->value.value_data = handle;
+        entry->delete_callback = library_eviction_callback;
+        entry->data_size = 100;
+        if (add_to_cache(cache, entry) == CACHE_INSERT_ERR)
+        {
+            Free(entry->data);
+            Free(entry);
+        }
+    }
+    return handle;
 }
 
 /* Loads and runs the required .so module for the request */
@@ -50,7 +94,6 @@ void handle_dynamic_exec_lib(int client_fd, char* resource_name)
         /* Success */
         void (*func)(int) = dlsym(handle, "cgi_function");
         func(client_fd);
-        unload_dyn_library(handle);
     }
 }
 
@@ -311,4 +354,42 @@ void* statistics_thread(void* arg)
 void create_stat_thread()
 {
     create_threads(1, statistics_thread);
+}
+
+/*
+ * Wrapper for pthread_rwlock_rdlock */
+void Pthread_rwlock_rdlock(pthread_rwlock_t* lock)
+{
+    if (pthread_rwlock_rdlock(lock)!=0)
+    {
+        printf("Error obtaining a read lock\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+ * Wrapper for pthread_rwlock_wrlock */
+void Pthread_rwlock_wrlock(pthread_rwlock_t* lock)
+{
+    if (pthread_rwlock_wrlock(lock)!=0)
+    {
+        printf("Error obtaining a write lock\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+ * Wrapper for pthread_rwlock_unlock */
+void Pthread_rwlock_unlock(pthread_rwlock_t* lock)
+{
+    if (pthread_rwlock_unlock(lock)!=0)
+    {
+        printf("Error unlocking rdwr lock\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void init_cache()
+{
+    cache = get_new_cache();
 }

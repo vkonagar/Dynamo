@@ -3,6 +3,7 @@
 
 #include "http_util.h"
 #include <pthread.h>
+#include "csapp.h"
 
 #define STAT_INTERVAL               5 /* Display interval for statistics */
 
@@ -82,4 +83,8 @@ void init_stat_mutexes();
 void increment_request_count();
 long get_request_count();
 void create_stat_thread();
+void Pthread_rwlock_rdlock(pthread_rwlock_t* lock);
+void Pthread_rwlock_wrlock(pthread_rwlock_t* lock);
+void Pthread_rwlock_unlock(pthread_rwlock_t* lock);
+void* load_dyn_library(char* library_name);
 #endif
