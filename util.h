@@ -6,7 +6,7 @@
 #include "csapp.h"
 
 #define STAT_INTERVAL               5 /* Display interval for statistics */
-#define CACHE_INVALIDATION_TIMEOUT  60
+#define CACHE_REVALIDATION_TIMEOUT  60
 
 #define EVENT_OWNER_CLIENT          1
 #define EVENT_OWNER_WORKER          2

@@ -10,6 +10,13 @@
  * 4. Serves HTML (.html), image (.gif and .jpg), and text (.txt) files.
  * 5. Accepts a single command-line argument: the port to listen on.
  * 6. Implements concurrency using IO Multiplexing and worker threads.
+ * 7. Does code caching to perform fast dynamic code execution.
+ * 8. Automates cache code revalidation every 1 minute (can be confgigurable).
+ 	  Once loaded, the code can change in the file system. Refreshing is done
+	  automatically.
+ * 9. Supports dynamic plug and play .so modules. (Install the modules at
+ *    CGIBIN_DIR_NAME. Ex: 'new_module_name.so' is executed when requests are 
+ *    for /cgi-bin/<new_module_name>)
  *
  * Author: Vamshi Reddy Konagari
  * Email: vkonagar@andrew.cmu.edu

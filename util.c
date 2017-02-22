@@ -21,10 +21,12 @@
 #include "csapp.h"
 #include "cache.h"
 
-/* Statistics data */
+/* Statistics related */
 static long request_cnt = 0;
 static long reply_cnt = 0;
 static pthread_mutex_t replycnt_mutex;
+
+/* Cache */
 static cache_t* cache;
 
 /* Creates a worker for static request */
@@ -35,6 +37,7 @@ void create_static_worker(int client_fd, void* (*func)(void*), char* res_name)
     pthread_create(&thread_id, NULL, func, (void*) item);
 }
 
+/* This is a callback called when the library item is evicted from the cache */
 void library_eviction_callback(cache_data_item_t* item)
 {
     printf("Unloading library %s\n", item->key.key_data);
@@ -44,6 +47,8 @@ void library_eviction_callback(cache_data_item_t* item)
     }
 }
 
+/* Closes the library and possibly unloads it from the address
+ * space */
 void unload_dyn_library(void* handle)
 {
     if (dlclose(handle) < 0)
@@ -340,7 +345,7 @@ void increment_request_count()
     request_cnt++;
 }
 
-void* cache_invalidation_thread(void* arg)
+void* cache_revalidation_thread(void* arg)
 {
     if (pthread_detach(pthread_self()) == -1)
     {
@@ -349,7 +354,7 @@ void* cache_invalidation_thread(void* arg)
     }
     while(1)
     {
-        printf("CACHE INVALIDATION THREAD\n");
+        printf("CACHE REVALIDATION THREAD INVOKED\n");
         get_global_cache_wrlock(cache);
         /* Go through all the entries and check if the underlying
          * file is changed */
@@ -367,7 +372,7 @@ void* cache_invalidation_thread(void* arg)
              * Need to improve using last modified timestamps */
             if (entry->data_size != st.st_size)
             {
-                printf("CACHE INVALIDATION THREAD: Refreshed %s\n", entry->data->key.key_data);
+                printf("CACHE REVALIDATION THREAD: Refreshed %s\n", entry->data->key.key_data);
                 /* Needs sync */
                 unload_dyn_library(entry->data->value.value_data);
                 void* handle = dlopen(entry->data->key.key_data, RTLD_LAZY);
@@ -381,7 +386,7 @@ void* cache_invalidation_thread(void* arg)
             entry = entry->next;
         }
         release_global_cache_wrlock(cache);
-        sleep(CACHE_INVALIDATION_TIMEOUT);
+        sleep(CACHE_REVALIDATION_TIMEOUT);
     }
 }
 
@@ -457,6 +462,6 @@ void init_library()
         exit(EXIT_FAILURE);
     }
     cache = get_new_cache();
-    /* Start up cache invalidation thread */
-    create_threads(1, cache_invalidation_thread);
+    /* Start up cache revalidation thread */
+    create_threads(1, cache_revalidation_thread);
 }
