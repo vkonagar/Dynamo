@@ -61,7 +61,7 @@ typedef struct cache
 cache_t* get_new_cache();
 cache_entry_t* get_new_cache_entry();
 
-/* Put, Get, and Delete */ 
+/* Put, Get, and Delete */
 int add_to_cache(cache_t* cache, cache_entry_t* entry);
 int delete_lru_entry(cache_t* cache);
 cache_entry_t* get_cached_item_with_lock(cache_t* cache, cache_key_t* key);

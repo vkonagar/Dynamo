@@ -12,11 +12,15 @@
  * 6. Implements concurrency using IO Multiplexing and worker threads.
  * 7. Does code caching to perform fast dynamic code execution.
  * 8. Automates cache code revalidation every 1 minute (can be confgigurable).
- 	  Once loaded, the code can change in the file system. Refreshing is done
+ 	  Once loaded, the code can change in the file system. Reloading is done
 	  automatically.
  * 9. Supports dynamic plug and play .so modules. (Install the modules at
- *    CGIBIN_DIR_NAME. Ex: 'new_module_name.so' is executed when requests are 
+ *    CGIBIN_DIR_NAME. Ex: 'new_module_name.so' is executed when requests are
  *    for /cgi-bin/<new_module_name>)
+ * 10. Runs statistics monitor thread, that reports requests, replies, request
+ *    rate and reply rate periodically.
+ *
+ * Please Read the README file for more details.
  *
  * Author: Vamshi Reddy Konagari
  * Email: vkonagar@andrew.cmu.edu

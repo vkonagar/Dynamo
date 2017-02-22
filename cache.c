@@ -2,15 +2,14 @@
 /* Thread-safe cache implementation using LinkedList.
  * *************************************************
  * This cache implementation uses a linkedlist by locking at two levels.
- * All of the locks are reader-writer locks.
  * There is a cache level lock, which is used when a thread wants to
  * read/update the head of the linkedlist of the cache.
  *
- * If threads want to just access an element inside the cache, they acquire
- * the read writer lock of that element.
+ * If a thread wants to just access an element inside the cache, it should
+ * acquire the read writer lock of that element.
  *
  * Cache is implemented using LRU with unix timestamps. When a thread accesses
- * a data item, its timestamp is updated to the latest timestamp and when
+ * a data item, the timestamp is updated to the latest timestamp and when
  * eviction is done, the oldest entry is evicted.
  *
  * This is an approximation of LRU and is not a strict LRU as there will be
@@ -226,7 +225,7 @@ int delete_lru_entry(cache_t* cache)
         lru_entry->prev->next = lru_entry->next;
         lru_entry->next->prev = lru_entry->prev;
     }
-    printf("Evicted %s \n", lru_entry->data->key.key_data);
+    dbg_printf("Evicted %s \n", lru_entry->data->key.key_data);
     /* Call back is called to perform clean up */
     if (lru_entry->delete_callback != NULL)
         lru_entry->delete_callback(lru_entry->data);
