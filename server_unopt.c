@@ -143,8 +143,6 @@ int main(int argc, char *argv[])
         printf("Port not provided. Using the default port %d\n", DEFAULT_LISTEN_PORT);
     }
 
-    /* Initialize stat mutex */
-    init_library();
     /* Create stat thread */
     create_stat_thread();
 

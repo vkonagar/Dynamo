@@ -98,5 +98,5 @@ void Pthread_rwlock_unlock(pthread_rwlock_t* lock);
 /* Dynamic library */
 void handle_dynamic_exec_lib(int client_fd, char* resource_name);
 void* load_dyn_library(char* library_name);
-void init_library();
+void init_cache();
 #endif

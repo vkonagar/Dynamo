@@ -417,6 +417,11 @@ void* statistics_thread(void* arg)
 
 void create_stat_thread()
 {
+    if (pthread_mutex_init(&replycnt_mutex, NULL) != 0)
+    {
+        perror("mutex init");
+        exit(EXIT_FAILURE);
+    }
     create_threads(1, statistics_thread);
 }
 
@@ -454,13 +459,8 @@ void Pthread_rwlock_unlock(pthread_rwlock_t* lock)
 }
 
 
-void init_library()
+void init_cache()
 {
-    if (pthread_mutex_init(&replycnt_mutex, NULL) != 0)
-    {
-        perror("mutex init");
-        exit(EXIT_FAILURE);
-    }
     cache = get_new_cache();
     /* Start up cache revalidation thread */
     create_threads(1, cache_revalidation_thread);

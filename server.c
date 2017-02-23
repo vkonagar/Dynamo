@@ -196,7 +196,7 @@ void* dynamic_content_worker_thread(void* arg)
 
 int main(int argc, char *argv[])
 {
-    init_library();
+    init_cache();
 
     increase_fd_limit(MAX_FD_LIMIT);
     signal(SIGPIPE, SIG_IGN); /* Ignore Sigpipe */
